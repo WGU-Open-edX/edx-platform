@@ -1329,7 +1329,7 @@ class ContentLibraryExportTest(ContentLibrariesRestApiTest):
         self.wrong_task_id = '11111111-1111-1111-1111-111111111111'
 
     def test_get_backup_task_status_no_task(self) -> None:
-        status = api.get_backup_task_status(self.user.id, None)
+        status = api.get_backup_task_status(self.user.id, "")
         assert status is None
 
     def test_get_backup_task_status_wrong_task_id(self) -> None:
