@@ -511,8 +511,6 @@ class LibraryBackupTask(UserTask):  # pylint: disable=abstract-method
 
 
 @shared_task(base=LibraryBackupTask, bind=True)
-# Note: The decorator @set_code_owner_attribute cannot be used here because the UserTaskMixin
-#   does stack inspection and can't handle additional decorators.
 def backup_library(self, user_id: int, library_key_str: str) -> None:
     """
     Export a library to a .zip archive and prepare it for download.
@@ -523,7 +521,6 @@ def backup_library(self, user_id: int, library_key_str: str) -> None:
         - Failed: Task failed and the export did not complete.
     """
     ensure_cms("backup_library may only be executed in a CMS context")
-    set_code_owner_attribute_from_module(__name__)
     library_key = LibraryLocatorV2.from_string(library_key_str)
 
     try:
