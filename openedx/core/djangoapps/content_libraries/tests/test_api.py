@@ -1329,11 +1329,11 @@ class ContentLibraryExportTest(ContentLibrariesRestApiTest):
         self.wrong_task_id = '11111111-1111-1111-1111-111111111111'
 
     def test_get_backup_task_status_no_task(self) -> None:
-        status = api.get_backup_task_status(self.lib1.library_key, self.user.id)
+        status = api.get_backup_task_status(self.user.id, None)
         assert status is None
 
     def test_get_backup_task_status_wrong_task_id(self) -> None:
-        status = api.get_backup_task_status(self.lib1.library_key, self.user.id, task_id=self.wrong_task_id)
+        status = api.get_backup_task_status(self.user.id, task_id=self.wrong_task_id)
         assert status is None
 
     def test_get_backup_task_status_in_progress(self) -> None:
@@ -1351,7 +1351,7 @@ class ContentLibraryExportTest(ContentLibrariesRestApiTest):
         ) as mock_get:
             mock_get.return_value = mock_task
 
-            status = api.get_backup_task_status(self.lib1.library_key, self.user.id, task_id=task_id)
+            status = api.get_backup_task_status(self.user.id, task_id=task_id)
             assert status is not None
             assert status['state'] == UserTaskStatus.IN_PROGRESS
             assert status['url'] is None
@@ -1379,38 +1379,10 @@ class ContentLibraryExportTest(ContentLibrariesRestApiTest):
             mock_get.return_value = mock_task
             mock_artifact_get.return_value = mock_artifact
 
-            status = api.get_backup_task_status(self.lib1.library_key, self.user.id, task_id=task_id)
+            status = api.get_backup_task_status(self.user.id, task_id=task_id)
             assert status is not None
             assert status['state'] == UserTaskStatus.SUCCEEDED
             assert status['url'] == "/media/user_tasks/2025/10/01/library-libOEXCSPROB_mOw1rPL.zip"
-
-    def test_get_backup_task_status_latest_task(self) -> None:
-        # Test getting the latest task when no task_id is provided
-        mock_task = UserTaskStatus(
-            task_id=str(uuid.uuid4()),
-            user_id=self.user.id,
-            name=f"Export of {self.lib1.library_key}",
-            state=UserTaskStatus.PENDING
-        )
-
-        mock_queryset = mock.Mock()
-        mock_queryset.order_by.return_value.first.return_value = mock_task
-
-        with mock.patch(
-            'openedx.core.djangoapps.content_libraries.api.libraries.UserTaskStatus.objects.filter'
-        ) as mock_filter:
-            mock_filter.return_value = mock_queryset
-
-            status = api.get_backup_task_status(self.lib1.library_key, self.user.id)
-            assert status is not None
-            assert status['state'] == UserTaskStatus.PENDING
-            assert status['url'] is None
-
-            # Verify the filter was called with correct parameters
-            mock_filter.assert_called_once_with(
-                user_id=self.user.id,
-                name__contains=str(self.lib1.library_key)
-            )
 
     def test_get_backup_task_status_failed(self) -> None:
         # Create a mock UserTaskStatus in FAILED state
@@ -1427,7 +1399,7 @@ class ContentLibraryExportTest(ContentLibrariesRestApiTest):
         ) as mock_get:
             mock_get.return_value = mock_task
 
-            status = api.get_backup_task_status(self.lib1.library_key, self.user.id, task_id=task_id)
+            status = api.get_backup_task_status(self.user.id, task_id=task_id)
             assert status is not None
             assert status['state'] == UserTaskStatus.FAILED
             assert status['url'] is None

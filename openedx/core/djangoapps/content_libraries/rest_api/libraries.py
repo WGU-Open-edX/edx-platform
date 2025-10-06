@@ -719,10 +719,9 @@ class LibraryBackupView(APIView):
 
     **GET Parameters**
 
-        A GET request can include the following parameters:
+        A GET request must include the following parameters:
 
-        * task_id: (optional) The UUID of the task to check. If not provided,
-          the latest task for the library created by the calling user will be returned.
+        * task_id: (required) The UUID of the task to check.
 
     **GET Response Values**
 
@@ -766,7 +765,7 @@ class LibraryBackupView(APIView):
             apidocs.query_parameter(
                 'task_id',
                 str,
-                description="The ID of the backup task to retrieve. If not specified, retrieves the latest task."
+                description="The ID of the backup task to retrieve."
             ),
         ],
         responses={200: LibraryBackupTaskStatusSerializer}
@@ -774,14 +773,16 @@ class LibraryBackupView(APIView):
     @convert_exceptions
     def get(self, request, lib_key_str):
         """
-        Get the status of the specified or latest backup task for the specified library.
+        Get the status of the specified backup task for the specified library.
         """
         library_key = LibraryLocatorV2.from_string(lib_key_str)
         # Using CAN_EDIT_THIS_CONTENT_LIBRARY permission for now. This should eventually become its own permission
         api.require_permission_for_library_key(library_key, request.user, permissions.CAN_EDIT_THIS_CONTENT_LIBRARY)
 
         task_id = request.query_params.get('task_id', None)
-        result = get_backup_task_status(library_key, request.user.id, task_id)
+        if not task_id:
+            raise ValidationError(detail={'task_id': _('This field is required.')})
+        result = get_backup_task_status(request.user.id, task_id)
 
         if not result:
             raise NotFound(detail="No backup found for this library.")

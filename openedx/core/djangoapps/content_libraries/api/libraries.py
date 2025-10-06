@@ -692,9 +692,8 @@ def revert_changes(library_key: LibraryLocatorV2, user_id: int | None = None) ->
 
 
 def get_backup_task_status(
-    library_key: LibraryLocatorV2,
     user_id: int,
-    task_id: str | None = None
+    task_id: str
 ) -> dict | None:
     """
     Get the status of a library backup task.
@@ -711,12 +710,6 @@ def get_backup_task_status(
             task_status = UserTaskStatus.objects.get(task_id=task_id, user_id=user_id)
         except UserTaskStatus.DoesNotExist:
             return None
-    else:
-        # Get the latest task for this user and library
-        task_status = UserTaskStatus.objects.filter(
-            user_id=user_id,
-            name__contains=str(library_key)
-        ).order_by('-created').first()
 
     if not task_status:
         return None
