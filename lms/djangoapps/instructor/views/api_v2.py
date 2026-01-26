@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import GenericAPIView
 from rest_framework.exceptions import NotFound
+from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_control
 from django.utils.html import strip_tags
@@ -402,3 +403,273 @@ class ORAView(GenericAPIView):
 
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)
+
+
+class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+
+        List all available report downloads for a course.
+
+    **Example Requests**
+
+        GET /api/instructor/v2/courses/{course_key}/reports
+
+    **Response Values**
+
+        {
+            "downloads": [
+                {
+                    "report_name": "enrolled_students_2024_01_26.csv",
+                    "report_url": "/instructor/api/v2/courses/{course_key}/reports/download/enrolled_students_2024_01_26.csv",
+                    "date_generated": "2024-01-26T10:30:00Z",
+                    "report_type": "enrolled_students"
+                }
+            ]
+        }
+
+    **Parameters**
+
+        course_key: Course key for the course.
+
+    **Returns**
+
+        * 200: OK - Returns list of available reports
+        * 401: Unauthorized - User is not authenticated
+        * 403: Forbidden - User lacks instructor permissions
+        * 404: Not Found - Course does not exist
+    """
+
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.CAN_RESEARCH
+
+    @apidocs.schema(
+        parameters=[
+            apidocs.string_parameter(
+                'course_id',
+                apidocs.ParameterLocation.PATH,
+                description="Course key for the course.",
+            ),
+        ],
+        responses={
+            200: "Returns list of available report downloads.",
+            401: "The requesting user is not authenticated.",
+            403: "The requesting user lacks instructor access to the course.",
+            404: "The requested course does not exist.",
+        },
+    )
+    def get(self, request, course_id):
+        """
+        List all available report downloads for a course.
+        """
+        from lms.djangoapps.instructor_task.models import ReportStore
+
+        course_key = CourseKey.from_string(course_id)
+        report_store = ReportStore.from_config(config_name='GRADES_DOWNLOAD')
+
+        downloads = []
+        for name, url in report_store.links_for(course_key):
+            # Parse report metadata from filename
+            report_type = 'unknown'
+            date_generated = None
+
+            # Try to determine report type from filename
+            if 'grade' in name.lower():
+                if 'problem' in name.lower():
+                    report_type = 'problem_grade'
+                else:
+                    report_type = 'grade'
+            elif 'student_state' in name.lower() or 'problem_responses' in name.lower():
+                report_type = 'problem_responses'
+            elif 'profile' in name.lower() or 'enrolled' in name.lower():
+                report_type = 'enrolled_students'
+            elif 'may_enroll' in name.lower():
+                report_type = 'pending_enrollments'
+            elif 'inactive' in name.lower():
+                report_type = 'pending_activations'
+            elif 'anon' in name.lower() or 'anonymous' in name.lower():
+                report_type = 'anonymized_student_ids'
+            elif 'ora2_summary' in name.lower():
+                report_type = 'ora2_summary'
+            elif 'ora2_data' in name.lower():
+                report_type = 'ora2_data'
+            elif 'ora2_submission' in name.lower():
+                report_type = 'ora2_submission_files'
+
+            # Extract date from filename if possible (format: YYYY-MM-DD-HHMM)
+            import re
+            date_match = re.search(r'_(\d{4}-\d{2}-\d{2}-\d{4})', name)
+            if date_match:
+                date_str = date_match.group(1)
+                # Convert to ISO format: YYYY-MM-DDTHH:MM:00Z
+                try:
+                    from datetime import datetime
+                    dt = datetime.strptime(date_str, '%Y-%m-%d-%H%M')
+                    date_generated = dt.strftime('%Y-%m-%dT%H:%M:00Z')
+                except ValueError:
+                    pass
+
+            downloads.append({
+                'report_name': name,
+                'report_url': url,
+                'date_generated': date_generated,
+                'report_type': report_type,
+            })
+
+        return Response({'downloads': downloads}, status=status.HTTP_200_OK)
+
+
+@method_decorator(transaction.non_atomic_requests, name='dispatch')
+class GenerateReportView(DeveloperErrorViewMixin, APIView):
+    """
+    **Use Cases**
+
+        Generate a specific type of report for a course.
+
+    **Example Requests**
+
+        POST /api/instructor/v2/courses/{course_key}/reports/enrolled_students/generate
+        POST /api/instructor/v2/courses/{course_key}/reports/grade/generate
+        POST /api/instructor/v2/courses/{course_key}/reports/problem_responses/generate
+
+    **Response Values**
+
+        {
+            "status": "The report is being created. Please check the data downloads section for the status."
+        }
+
+    **Parameters**
+
+        course_key: Course key for the course.
+        report_type: Type of report to generate (enrolled_students, grade, problem_grade, etc.)
+
+    **Returns**
+
+        * 200: OK - Report generation task has been submitted
+        * 400: Bad Request - Task is already running or invalid report type
+        * 401: Unauthorized - User is not authenticated
+        * 403: Forbidden - User lacks instructor permissions
+        * 404: Not Found - Course does not exist
+    """
+
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.CAN_RESEARCH
+
+    @apidocs.schema(
+        parameters=[
+            apidocs.string_parameter(
+                'course_id',
+                apidocs.ParameterLocation.PATH,
+                description="Course key for the course.",
+            ),
+            apidocs.string_parameter(
+                'report_type',
+                apidocs.ParameterLocation.PATH,
+                description="Type of report to generate.",
+            ),
+        ],
+        responses={
+            200: "Report generation task has been submitted successfully.",
+            400: "The requested task is already running or invalid report type.",
+            401: "The requesting user is not authenticated.",
+            403: "The requesting user lacks instructor access to the course.",
+            404: "The requested course does not exist.",
+        },
+    )
+    def post(self, request, course_id, report_type):
+        """
+        Generate a specific type of report for a course.
+        """
+        course_key = CourseKey.from_string(course_id)
+
+        # Map report types to their submission functions
+        report_handlers = {
+            'enrolled_students': self._generate_enrolled_students_report,
+            'pending_enrollments': self._generate_pending_enrollments_report,
+            'pending_activations': self._generate_pending_activations_report,
+            'anonymized_student_ids': self._generate_anonymized_ids_report,
+            'grade': self._generate_grade_report,
+            'problem_grade': self._generate_problem_grade_report,
+            'problem_responses': self._generate_problem_responses_report,
+            'ora2_summary': self._generate_ora2_summary_report,
+            'ora2_data': self._generate_ora2_data_report,
+            'ora2_submission_files': self._generate_ora2_submission_files_report,
+        }
+
+        handler = report_handlers.get(report_type)
+        if not handler:
+            return Response(
+                {'error': f'Invalid report type: {report_type}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            success_message = handler(request, course_key)
+        except Exception as error:
+            log.error(f"Error submitting {report_type} report task: {error}")
+            return Response(
+                {'error': 'The requested task is already running.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response({'status': success_message}, status=status.HTTP_200_OK)
+
+    def _generate_enrolled_students_report(self, request, course_key):
+        """Generate enrolled students report."""
+        query_features = [
+            'id', 'username', 'name', 'email', 'language', 'location',
+            'year_of_birth', 'gender', 'level_of_education', 'mailing_address',
+            'goals', 'enrollment_mode', 'verification_status', 'enrollment_date',
+            'last_login', 'cohort', 'team', 'city', 'country'
+        ]
+        task_api.submit_calculate_students_features_csv(request, course_key, query_features)
+        return _('The enrolled student report is being created.')
+
+    def _generate_pending_enrollments_report(self, request, course_key):
+        """Generate pending enrollments report."""
+        query_features = ['email']
+        task_api.submit_calculate_may_enroll_csv(request, course_key, query_features)
+        return _('The pending enrollments report is being created.')
+
+    def _generate_pending_activations_report(self, request, course_key):
+        """Generate pending activations report."""
+        query_features = ['email']
+        task_api.submit_calculate_inactive_enrolled_students_csv(request, course_key, query_features)
+        return _('The pending activations report is being created.')
+
+    def _generate_anonymized_ids_report(self, request, course_key):
+        """Generate anonymized student IDs report."""
+        task_api.generate_anonymous_ids(request, course_key)
+        return _('The anonymized student IDs report is being created.')
+
+    def _generate_grade_report(self, request, course_key):
+        """Generate grade report."""
+        task_api.submit_calculate_grades_csv(request, course_key)
+        return _('The grade report is being created.')
+
+    def _generate_problem_grade_report(self, request, course_key):
+        """Generate problem grade report."""
+        task_api.submit_problem_grade_report(request, course_key)
+        return _('The problem grade report is being created.')
+
+    def _generate_problem_responses_report(self, request, course_key):
+        """Generate problem responses report."""
+        problem_location = request.data.get('problem_location')
+        problem_locations = [problem_location] if problem_location else []
+        task_api.submit_calculate_problem_responses_csv(request, course_key, problem_locations)
+        return _('The problem responses report is being created.')
+
+    def _generate_ora2_summary_report(self, request, course_key):
+        """Generate ORA2 summary report."""
+        task_api.submit_export_ora2_summary(request, course_key)
+        return _('The ORA2 summary report is being created.')
+
+    def _generate_ora2_data_report(self, request, course_key):
+        """Generate ORA2 data report."""
+        task_api.submit_export_ora2_data(request, course_key)
+        return _('The ORA2 data report is being created.')
+
+    def _generate_ora2_submission_files_report(self, request, course_key):
+        """Generate ORA2 submission files archive."""
+        task_api.submit_export_ora2_submission_files(request, course_key)
+        return _('The ORA2 submission files archive is being created.')

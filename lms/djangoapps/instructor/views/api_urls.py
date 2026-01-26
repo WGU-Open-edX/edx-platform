@@ -46,6 +46,16 @@ v2_api_urls = [
         api_v2.ORAView.as_view(),
         name='ora_assessments'
     ),
+    re_path(
+        rf'^courses/{COURSE_ID_PATTERN}/reports$',
+        api_v2.ReportDownloadsView.as_view(),
+        name='report_downloads'
+    ),
+    re_path(
+        rf'^courses/{COURSE_ID_PATTERN}/reports/(?P<report_type>[^/]+)/generate$',
+        api_v2.GenerateReportView.as_view(),
+        name='generate_report'
+    ),
 ]
 
 urlpatterns = [
