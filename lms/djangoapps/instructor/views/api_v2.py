@@ -463,51 +463,18 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         List all available report downloads for a course.
         """
         from lms.djangoapps.instructor_task.models import ReportStore
+        from lms.djangoapps.instructor_task.data import ReportType
 
         course_key = CourseKey.from_string(course_id)
         report_store = ReportStore.from_config(config_name='GRADES_DOWNLOAD')
 
         downloads = []
         for name, url in report_store.links_for(course_key):
-            # Parse report metadata from filename
-            report_type = 'unknown'
-            date_generated = None
-
-            # Try to determine report type from filename
-            if 'grade' in name.lower():
-                if 'problem' in name.lower():
-                    report_type = 'problem_grade'
-                else:
-                    report_type = 'grade'
-            elif 'student_state' in name.lower() or 'problem_responses' in name.lower():
-                report_type = 'problem_responses'
-            elif 'profile' in name.lower() or 'enrolled' in name.lower():
-                report_type = 'enrolled_students'
-            elif 'may_enroll' in name.lower():
-                report_type = 'pending_enrollments'
-            elif 'inactive' in name.lower():
-                report_type = 'pending_activations'
-            elif 'anon' in name.lower() or 'anonymous' in name.lower():
-                report_type = 'anonymized_student_ids'
-            elif 'ora2_summary' in name.lower():
-                report_type = 'ora2_summary'
-            elif 'ora2_data' in name.lower():
-                report_type = 'ora2_data'
-            elif 'ora2_submission' in name.lower():
-                report_type = 'ora2_submission_files'
+            # Determine report type from filename using helper method
+            report_type = self._detect_report_type_from_filename(name)
 
             # Extract date from filename if possible (format: YYYY-MM-DD-HHMM)
-            import re
-            date_match = re.search(r'_(\d{4}-\d{2}-\d{2}-\d{4})', name)
-            if date_match:
-                date_str = date_match.group(1)
-                # Convert to ISO format: YYYY-MM-DDTHH:MM:00Z
-                try:
-                    from datetime import datetime
-                    dt = datetime.strptime(date_str, '%Y-%m-%d-%H%M')
-                    date_generated = dt.strftime('%Y-%m-%dT%H:%M:00Z')
-                except ValueError:
-                    pass
+            date_generated = self._extract_date_from_filename(name)
 
             downloads.append({
                 'report_name': name,
@@ -517,6 +484,72 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
             })
 
         return Response({'downloads': downloads}, status=status.HTTP_200_OK)
+
+    def _detect_report_type_from_filename(self, filename):
+        """
+        Detect report type from filename using pattern matching.
+        Check more specific patterns first to avoid false matches.
+
+        Args:
+            filename: The name of the report file
+
+        Returns:
+            str: The report type identifier
+        """
+        from lms.djangoapps.instructor_task.data import ReportType
+
+        name_lower = filename.lower()
+
+        # Check more specific patterns first to avoid false matches
+        if 'inactive' in name_lower and 'enrolled' in name_lower:
+            return ReportType.PENDING_ACTIVATIONS
+        elif 'problem' in name_lower and 'grade' in name_lower:
+            return ReportType.PROBLEM_GRADE
+        elif 'ora2_submission' in name_lower or 'submission_files' in name_lower:
+            return ReportType.ORA2_SUBMISSION_FILES
+        elif 'ora2_summary' in name_lower or 'ora_summary' in name_lower:
+            return ReportType.ORA2_SUMMARY
+        elif 'ora2_data' in name_lower or 'ora_data' in name_lower:
+            return ReportType.ORA2_DATA
+        elif 'may_enroll' in name_lower:
+            return ReportType.PENDING_ENROLLMENTS
+        elif 'profile' in name_lower or 'student_profile' in name_lower:
+            return ReportType.ENROLLED_STUDENTS
+        elif 'student_state' in name_lower or 'problem_responses' in name_lower:
+            return ReportType.PROBLEM_RESPONSES
+        elif 'anon' in name_lower or 'anonymous' in name_lower:
+            return ReportType.ANONYMIZED_STUDENT_IDS
+        elif 'certificate' in name_lower:
+            return ReportType.ISSUED_CERTIFICATES
+        elif 'grade' in name_lower:
+            return ReportType.GRADE
+        elif 'enrolled' in name_lower:
+            return ReportType.ENROLLED_STUDENTS
+
+        return ReportType.UNKNOWN
+
+    def _extract_date_from_filename(self, filename):
+        """
+        Extract date from filename (format: YYYY-MM-DD-HHMM).
+
+        Args:
+            filename: The name of the report file
+
+        Returns:
+            str: ISO formatted date string or None
+        """
+        import re
+        from datetime import datetime
+
+        date_match = re.search(r'_(\d{4}-\d{2}-\d{2}-\d{4})', filename)
+        if date_match:
+            date_str = date_match.group(1)
+            try:
+                dt = datetime.strptime(date_str, '%Y-%m-%d-%H%M')
+                return dt.strftime('%Y-%m-%dT%H:%M:00Z')
+            except ValueError:
+                pass
+        return None
 
 
 @method_decorator(transaction.non_atomic_requests, name='dispatch')
@@ -541,7 +574,17 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
     **Parameters**
 
         course_key: Course key for the course.
-        report_type: Type of report to generate (enrolled_students, grade, problem_grade, etc.)
+        report_type: Type of report to generate. Valid values:
+            - enrolled_students: Enrolled Students Report
+            - pending_enrollments: Pending Enrollments Report
+            - pending_activations: Pending Activations Report (inactive users with enrollments)
+            - anonymized_student_ids: Anonymized Student IDs Report
+            - grade: Grade Report
+            - problem_grade: Problem Grade Report
+            - problem_responses: Problem Responses Report
+            - ora2_summary: ORA Summary Report
+            - ora2_data: ORA Data Report
+            - ora2_submission_files: ORA Submission Files Report
 
     **Returns**
 
@@ -565,7 +608,12 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
             apidocs.string_parameter(
                 'report_type',
                 apidocs.ParameterLocation.PATH,
-                description="Type of report to generate.",
+                description=(
+                    "Type of report to generate. Valid values: "
+                    "enrolled_students, pending_enrollments, pending_activations, "
+                    "anonymized_student_ids, grade, problem_grade, problem_responses, "
+                    "ora2_summary, ora2_data, ora2_submission_files"
+                ),
             ),
         ],
         responses={
