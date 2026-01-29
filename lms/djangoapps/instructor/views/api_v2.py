@@ -466,6 +466,9 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         from lms.djangoapps.instructor_task.data import ReportType
 
         course_key = CourseKey.from_string(course_id)
+        # Validate that the course exists
+        get_course_by_id(course_key)
+
         report_store = ReportStore.from_config(config_name='GRADES_DOWNLOAD')
 
         downloads = []
