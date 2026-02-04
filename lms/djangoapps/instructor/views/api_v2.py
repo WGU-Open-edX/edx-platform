@@ -659,7 +659,7 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         except Exception as error:
             log.error(f"Error submitting {report_type} report task: {error}")
             return Response(
-                {'error': 'The requested task is already running.'},
+                {'error': str(error)},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -705,9 +705,28 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
     def _generate_problem_responses_report(self, request, course_key):
         """Generate problem responses report."""
+        from xmodule.modulestore.django import modulestore
+        from xmodule.modulestore.exceptions import ItemNotFoundError
+
         problem_location = request.data.get('problem_location')
-        problem_locations = [problem_location] if problem_location else []
-        task_api.submit_calculate_problem_responses_csv(request, course_key, problem_locations)
+
+        # Validate problem location if provided
+        if problem_location:
+            try:
+                usage_key = UsageKey.from_string(problem_location).map_into_course(course_key)
+            except InvalidKeyError:
+                raise Exception(_('Invalid problem location format.'))
+
+            # Check if the problem actually exists in the modulestore
+            store = modulestore()
+            try:
+                store.get_item(usage_key)
+            except ItemNotFoundError:
+                raise Exception(_('The problem location does not exist in this course.'))
+
+        # The task expects a comma-separated string, not a list
+        problem_locations_str = problem_location if problem_location else ''
+        task_api.submit_calculate_problem_responses_csv(request, course_key, problem_locations_str)
         return _('The problem responses report is being created.')
 
     def _generate_ora2_summary_report(self, request, course_key):
