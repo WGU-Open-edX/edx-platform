@@ -588,6 +588,7 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
             - ora2_summary: ORA Summary Report
             - ora2_data: ORA Data Report
             - ora2_submission_files: ORA Submission Files Report
+            - issued_certificates: Issued Certificates Report
 
     **Returns**
 
@@ -615,7 +616,7 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
                     "Type of report to generate. Valid values: "
                     "enrolled_students, pending_enrollments, pending_activations, "
                     "anonymized_student_ids, grade, problem_grade, problem_responses, "
-                    "ora2_summary, ora2_data, ora2_submission_files"
+                    "ora2_summary, ora2_data, ora2_submission_files, issued_certificates"
                 ),
             ),
         ],
@@ -645,6 +646,7 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
             'ora2_summary': self._generate_ora2_summary_report,
             'ora2_data': self._generate_ora2_data_report,
             'ora2_submission_files': self._generate_ora2_submission_files_report,
+            'issued_certificates': self._generate_issued_certificates_report,
         }
 
         handler = report_handlers.get(report_type)
@@ -723,9 +725,15 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
                 store.get_item(usage_key)
             except ItemNotFoundError:
                 raise Exception(_('The problem location does not exist in this course.'))
+            
+            problem_locations_str = problem_location
+        else:
+            # When no problem location is provided, generate report for entire course
+            # Use the course root usage key to include all problems in the course
+            store = modulestore()
+            course_usage_key = store.make_course_usage_key(course_key)
+            problem_locations_str = str(course_usage_key)
 
-        # The task expects a comma-separated string, not a list
-        problem_locations_str = problem_location if problem_location else ''
         task_api.submit_calculate_problem_responses_csv(request, course_key, problem_locations_str)
         return _('The problem responses report is being created.')
 
@@ -743,3 +751,49 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         """Generate ORA2 submission files archive."""
         task_api.submit_export_ora2_submission_files(request, course_key)
         return _('The ORA2 submission files archive is being created.')
+
+    def _generate_issued_certificates_report(self, request, course_key):
+        """Generate issued certificates report."""
+        from lms.djangoapps.instructor_analytics import basic as instructor_analytics_basic
+        from lms.djangoapps.instructor_analytics import csvs as instructor_analytics_csvs
+        from lms.djangoapps.instructor_task.models import ReportStore
+        import datetime
+        import csv
+        import io
+
+        # Query features for the report
+        query_features = ['course_id', 'mode', 'total_issued_certificate', 'report_run_date']
+        query_features_names = [
+            ('course_id', _('CourseID')),
+            ('mode', _('Certificate Type')),
+            ('total_issued_certificate', _('Total Certificates Issued')),
+            ('report_run_date', _('Date Report Run'))
+        ]
+
+        # Get certificates data
+        certificates_data = instructor_analytics_basic.issued_certificates(course_key, query_features)
+
+        # Format the data for CSV
+        __, data_rows = instructor_analytics_csvs.format_dictlist(certificates_data, query_features)
+
+        # Generate CSV content as a file-like object
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write header
+        writer.writerow([col_header for __, col_header in query_features_names])
+
+        # Write data rows
+        for row in data_rows:
+            writer.writerow(row)
+
+        # Reset the buffer position to the beginning
+        output.seek(0)
+
+        # Store the report
+        report_store = ReportStore.from_config(config_name='GRADES_DOWNLOAD')
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M')
+        report_name = f'issued_certificates_{course_key}_{timestamp}.csv'
+        report_store.store(course_key, report_name, output)
+
+        return _('The issued certificates report has been created.')
