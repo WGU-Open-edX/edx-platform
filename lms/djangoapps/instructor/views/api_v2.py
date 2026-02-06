@@ -585,7 +585,8 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
             "downloads": [
                 {
                     "report_name": "enrolled_students_2024_01_26.csv",
-                    "report_url": "/instructor/api/v2/courses/{course_key}/reports/download/enrolled_students_2024_01_26.csv",
+                    "report_url":
+                        "/instructor/api/v2/courses/{course_key}/reports/download/enrolled_students.csv",
                     "date_generated": "2024-01-26T10:30:00Z",
                     "report_type": "enrolled_students"
                 }
@@ -627,7 +628,6 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         List all available report downloads for a course.
         """
         from lms.djangoapps.instructor_task.models import ReportStore
-        from lms.djangoapps.instructor_task.data import ReportType
 
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists
@@ -822,7 +822,7 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
         try:
             success_message = handler(request, course_key)
-        except Exception as error:
+        except ValueError as error:
             log.error(f"Error submitting {report_type} report task: {error}")
             return Response(
                 {'error': str(error)},
@@ -880,16 +880,16 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         if problem_location:
             try:
                 usage_key = UsageKey.from_string(problem_location).map_into_course(course_key)
-            except InvalidKeyError:
-                raise Exception(_('Invalid problem location format.'))
+            except InvalidKeyError as exc:
+                raise Exception(_('Invalid problem location format.')) from exc
 
             # Check if the problem actually exists in the modulestore
             store = modulestore()
             try:
                 store.get_item(usage_key)
-            except ItemNotFoundError:
-                raise Exception(_('The problem location does not exist in this course.'))
-            
+            except ItemNotFoundError as exc:
+                raise Exception(_('The problem location does not exist in this course.')) from exc
+
             problem_locations_str = problem_location
         else:
             # When no problem location is provided, generate report for entire course
