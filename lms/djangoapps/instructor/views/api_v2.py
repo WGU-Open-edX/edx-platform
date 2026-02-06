@@ -961,6 +961,8 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         report_store.store(course_key, report_name, output)
 
         return _('The issued certificates report has been created.')
+
+
 class ORASummaryView(GenericAPIView):
     """
     View to get a summary of Open Response Assessments (ORAs) for a given course.
