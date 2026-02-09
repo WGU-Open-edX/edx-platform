@@ -32,6 +32,7 @@ from lms.djangoapps.instructor import permissions
 from lms.djangoapps.instructor.views.api import _display_unit, get_student_from_identifier
 from lms.djangoapps.instructor.views.instructor_task_helpers import extract_task_features
 from lms.djangoapps.instructor_task import api as task_api
+from lms.djangoapps.instructor_task.api_helper import AlreadyRunningError, QueueConnectionError
 from lms.djangoapps.instructor.ora import get_open_response_assessment_list, get_ora_summary
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin
 from openedx.core.lib.courses import get_course_by_id
@@ -584,11 +585,11 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         {
             "downloads": [
                 {
-                    "report_name": "enrolled_students_2024_01_26.csv",
+                    "report_name": "course-v1_edX_DemoX_Demo_Course_grade_report_2024-01-26-1030.csv",
                     "report_url":
-                        "/instructor/api/v2/courses/{course_key}/reports/download/enrolled_students.csv",
+                        "/grades/course-v1:edX+DemoX+Demo_Course/course-v1_edX_DemoX_Demo_Course_grade_report_2024-01-26-1030.csv",
                     "date_generated": "2024-01-26T10:30:00Z",
-                    "report_type": "enrolled_students"
+                    "report_type": "grade"
                 }
             ]
         }
@@ -822,6 +823,18 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
         try:
             success_message = handler(request, course_key)
+        except AlreadyRunningError as error:
+            log.warning(f"Task already running for {report_type} report: {error}")
+            return Response(
+                {'error': _('A report generation task is already running. Please wait for it to complete.')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except QueueConnectionError as error:
+            log.error(f"Queue connection error for {report_type} report task: {error}")
+            return Response(
+                {'error': _('Unable to connect to the task queue. Please try again later.')},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
         except ValueError as error:
             log.error(f"Error submitting {report_type} report task: {error}")
             return Response(
@@ -881,14 +894,14 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
             try:
                 usage_key = UsageKey.from_string(problem_location).map_into_course(course_key)
             except InvalidKeyError as exc:
-                raise Exception(_('Invalid problem location format.')) from exc
+                raise ValueError(_('Invalid problem location format.')) from exc
 
             # Check if the problem actually exists in the modulestore
             store = modulestore()
             try:
                 store.get_item(usage_key)
             except ItemNotFoundError as exc:
-                raise Exception(_('The problem location does not exist in this course.')) from exc
+                raise ValueError(_('The problem location does not exist in this course.')) from exc
 
             problem_locations_str = problem_location
         else:
