@@ -33,6 +33,7 @@ from lms.djangoapps.instructor.views.api import _display_unit, get_student_from_
 from lms.djangoapps.instructor.views.instructor_task_helpers import extract_task_features
 from lms.djangoapps.instructor_task import api as task_api
 from lms.djangoapps.instructor_task.api_helper import AlreadyRunningError, QueueConnectionError
+from lms.djangoapps.instructor_task.data import ReportType
 from lms.djangoapps.instructor.ora import get_open_response_assessment_list, get_ora_summary
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin
 from openedx.core.lib.courses import get_course_by_id
@@ -589,7 +590,7 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
                     "report_url":
                         "/grades/course-v1:edX+DemoX+Demo_Course/course-v1_edX_DemoX_Demo_Course_grade_report_2024-01-26-1030.csv",
                     "date_generated": "2024-01-26T10:30:00Z",
-                    "report_type": "grade"
+                    "report_type": "grade"  # Uses ReportType.GRADE.value
                 }
             ]
         }
@@ -602,12 +603,14 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
 
         * 200: OK - Returns list of available reports
         * 401: Unauthorized - User is not authenticated
-        * 403: Forbidden - User lacks instructor permissions
+        * 403: Forbidden - User lacks staff access to the course
         * 404: Not Found - Course does not exist
     """
 
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
-    permission_name = permissions.CAN_RESEARCH
+    # Use ENROLLMENT_REPORT permission which allows course staff and data researchers
+    # to view generated reports, aligning with the intended audience of instructors/course staff
+    permission_name = permissions.ENROLLMENT_REPORT
 
     @apidocs.schema(
         parameters=[
@@ -664,37 +667,35 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         Returns:
             str: The report type identifier
         """
-        from lms.djangoapps.instructor_task.data import ReportType
-
         name_lower = filename.lower()
 
         # Check more specific patterns first to avoid false matches
         if 'inactive' in name_lower and 'enrolled' in name_lower:
-            return ReportType.PENDING_ACTIVATIONS
+            return ReportType.PENDING_ACTIVATIONS.value
         elif 'problem' in name_lower and 'grade' in name_lower:
-            return ReportType.PROBLEM_GRADE
+            return ReportType.PROBLEM_GRADE.value
         elif 'ora2_submission' in name_lower or 'submission_files' in name_lower:
-            return ReportType.ORA2_SUBMISSION_FILES
+            return ReportType.ORA2_SUBMISSION_FILES.value
         elif 'ora2_summary' in name_lower or 'ora_summary' in name_lower:
-            return ReportType.ORA2_SUMMARY
+            return ReportType.ORA2_SUMMARY.value
         elif 'ora2_data' in name_lower or 'ora_data' in name_lower:
-            return ReportType.ORA2_DATA
+            return ReportType.ORA2_DATA.value
         elif 'may_enroll' in name_lower:
-            return ReportType.PENDING_ENROLLMENTS
+            return ReportType.PENDING_ENROLLMENTS.value
         elif 'profile' in name_lower or 'student_profile' in name_lower:
-            return ReportType.ENROLLED_STUDENTS
+            return ReportType.ENROLLED_STUDENTS.value
         elif 'student_state' in name_lower or 'problem_responses' in name_lower:
-            return ReportType.PROBLEM_RESPONSES
+            return ReportType.PROBLEM_RESPONSES.value
         elif 'anon' in name_lower or 'anonymous' in name_lower:
-            return ReportType.ANONYMIZED_STUDENT_IDS
+            return ReportType.ANONYMIZED_STUDENT_IDS.value
         elif 'certificate' in name_lower:
-            return ReportType.ISSUED_CERTIFICATES
+            return ReportType.ISSUED_CERTIFICATES.value
         elif 'grade' in name_lower:
-            return ReportType.GRADE
+            return ReportType.GRADE.value
         elif 'enrolled' in name_lower:
-            return ReportType.ENROLLED_STUDENTS
+            return ReportType.ENROLLED_STUDENTS.value
 
-        return ReportType.UNKNOWN
+        return ReportType.UNKNOWN.value
 
     def _extract_date_from_filename(self, filename):
         """
@@ -765,7 +766,19 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
     """
 
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
-    permission_name = permissions.CAN_RESEARCH
+
+    @property
+    def permission_name(self):
+        """
+        Return the appropriate permission name based on the requested report type.
+        For the issued certificates report, mirror the v1 behavior by using
+        VIEW_ISSUED_CERTIFICATES (course-level staff access). For all other reports,
+        require CAN_RESEARCH.
+        """
+        report_type = self.kwargs.get('report_type')
+        if report_type == ReportType.ISSUED_CERTIFICATES.value:
+            return permissions.VIEW_ISSUED_CERTIFICATES
+        return permissions.CAN_RESEARCH
 
     @apidocs.schema(
         parameters=[
@@ -801,17 +814,17 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
         # Map report types to their submission functions
         report_handlers = {
-            'enrolled_students': self._generate_enrolled_students_report,
-            'pending_enrollments': self._generate_pending_enrollments_report,
-            'pending_activations': self._generate_pending_activations_report,
-            'anonymized_student_ids': self._generate_anonymized_ids_report,
-            'grade': self._generate_grade_report,
-            'problem_grade': self._generate_problem_grade_report,
-            'problem_responses': self._generate_problem_responses_report,
-            'ora2_summary': self._generate_ora2_summary_report,
-            'ora2_data': self._generate_ora2_data_report,
-            'ora2_submission_files': self._generate_ora2_submission_files_report,
-            'issued_certificates': self._generate_issued_certificates_report,
+            ReportType.ENROLLED_STUDENTS.value: self._generate_enrolled_students_report,
+            ReportType.PENDING_ENROLLMENTS.value: self._generate_pending_enrollments_report,
+            ReportType.PENDING_ACTIVATIONS.value: self._generate_pending_activations_report,
+            ReportType.ANONYMIZED_STUDENT_IDS.value: self._generate_anonymized_ids_report,
+            ReportType.GRADE.value: self._generate_grade_report,
+            ReportType.PROBLEM_GRADE.value: self._generate_problem_grade_report,
+            ReportType.PROBLEM_RESPONSES.value: self._generate_problem_responses_report,
+            ReportType.ORA2_SUMMARY.value: self._generate_ora2_summary_report,
+            ReportType.ORA2_DATA.value: self._generate_ora2_data_report,
+            ReportType.ORA2_SUBMISSION_FILES.value: self._generate_ora2_submission_files_report,
+            ReportType.ISSUED_CERTIFICATES.value: self._generate_issued_certificates_report,
         }
 
         handler = report_handlers.get(report_type)
@@ -931,10 +944,11 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
     def _generate_issued_certificates_report(self, request, course_key):
         """Generate issued certificates report."""
+        from datetime import datetime
+        from pytz import UTC
         from lms.djangoapps.instructor_analytics import basic as instructor_analytics_basic
         from lms.djangoapps.instructor_analytics import csvs as instructor_analytics_csvs
-        from lms.djangoapps.instructor_task.models import ReportStore
-        import datetime
+        from lms.djangoapps.instructor_task.tasks_helper.utils import upload_csv_file_to_report_store
         import csv
         import io
 
@@ -967,11 +981,15 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         # Reset the buffer position to the beginning
         output.seek(0)
 
-        # Store the report
-        report_store = ReportStore.from_config(config_name='GRADES_DOWNLOAD')
-        timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M')
-        report_name = f'issued_certificates_{course_key}_{timestamp}.csv'
-        report_store.store(course_key, report_name, output)
+        # Store the report using the standard helper function with UTC timestamp
+        timestamp = datetime.now(UTC)
+        upload_csv_file_to_report_store(
+            output,
+            'issued_certificates',
+            course_key,
+            timestamp,
+            config_name='GRADES_DOWNLOAD'
+        )
 
         return _('The issued certificates report has been created.')
 
