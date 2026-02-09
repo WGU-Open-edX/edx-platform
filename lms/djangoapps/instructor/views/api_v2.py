@@ -34,6 +34,7 @@ from rest_framework.generics import GenericAPIView, ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from submissions import api as sub_api
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
 
@@ -43,15 +44,17 @@ from openedx.core.djangoapps.course_groups.cohorts import is_course_cohorted
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 
 from lms.djangoapps.course_home_api.toggles import course_home_mfe_progress_tab_is_active
+from lms.djangoapps.courseware.access import has_access
+from lms.djangoapps.courseware.courses import get_course_with_access
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.courseware.tabs import get_course_tab_list
-from lms.djangoapps.instructor import permissions
+from lms.djangoapps.instructor import enrollment, permissions
+from lms.djangoapps.instructor.ora import get_open_response_assessment_list, get_ora_summary
 from lms.djangoapps.instructor.views.api import _display_unit, get_student_from_identifier
 from lms.djangoapps.instructor.views.instructor_task_helpers import extract_task_features
 from lms.djangoapps.instructor_task import api as task_api
 from lms.djangoapps.instructor_task.api_helper import AlreadyRunningError, QueueConnectionError
 from lms.djangoapps.instructor.constants import ReportType
-from lms.djangoapps.instructor.ora import get_open_response_assessment_list, get_ora_summary
 from lms.djangoapps.instructor_analytics import basic as instructor_analytics_basic
 from lms.djangoapps.instructor_analytics import csvs as instructor_analytics_csvs
 from lms.djangoapps.instructor_task.models import InstructorTask, ReportStore
@@ -60,16 +63,19 @@ from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin
 from openedx.core.lib.courses import get_course_by_id
 from openedx.features.course_experience.url_helpers import get_learning_mfe_home_url
 from .serializers_v2 import (
-    InstructorTaskListSerializer,
-    CourseInformationSerializerV2,
+    AsyncOperationResultSerializer,
     BlockDueDateSerializerV2,
+    CourseInformationSerializerV2,
     GradingConfigSerializer,
+    InstructorTaskListSerializer,
     LearnerSerializer,
-    ProblemSerializer,
-    TaskStatusSerializer,
-    UnitExtensionSerializer,
     ORASerializer,
     ORASummarySerializer,
+    ProblemSerializer,
+    ScoreOverrideRequestSerializer,
+    SyncOperationResultSerializer,
+    TaskStatusSerializer,
+    UnitExtensionSerializer,
 )
 from .tools import (
     find_unit,
@@ -1347,6 +1353,7 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+
         serializer = ProblemSerializer(problem_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1533,3 +1540,396 @@ class GradingConfigView(DeveloperErrorViewMixin, APIView):
         }
         serializer = GradingConfigSerializer(config_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+def _parse_course_and_problem(course_id, problem):
+    """
+    Parse and validate course_id and problem location strings.
+
+    Returns (course_key, usage_key) tuple on success.
+    Returns (None, Response) if validation fails — caller should return the Response.
+    """
+    try:
+        course_key = CourseKey.from_string(course_id)
+    except InvalidKeyError:
+        return None, Response(
+            {'error': 'INVALID_PARAMETER', 'message': 'Invalid course key format', 'status_code': 400},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        usage_key = UsageKey.from_string(problem).map_into_course(course_key)
+    except InvalidKeyError:
+        return None, Response(
+            {'error': 'INVALID_PARAMETER', 'message': 'Invalid problem location', 'status_code': 400},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    return (course_key, usage_key), None
+
+
+def _resolve_learner(learner_identifier):
+    """
+    Resolve a learner identifier (username or email) to a User object.
+
+    Returns User on success, or a Response with 404 on failure.
+    """
+    try:
+        return get_student_from_identifier(learner_identifier), None
+    except Exception:  # pylint: disable=broad-except
+        return None, Response(
+            {'error': 'RESOURCE_NOT_FOUND', 'message': 'Learner not found', 'status_code': 404},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
+def _build_async_response(instructor_task, course_id, problem_location, learner_scope='all'):
+    """
+    Build a 202 Accepted response for an async task.
+    """
+    task_id = str(instructor_task.task_id)
+    status_url = reverse(
+        'instructor_api_v2:task_status',
+        kwargs={'course_id': course_id, 'task_id': task_id}
+    )
+    data = {
+        'task_id': task_id,
+        'status_url': status_url,
+        'scope': {
+            'learners': learner_scope,
+            'problem_location': str(problem_location),
+        }
+    }
+    serializer = AsyncOperationResultSerializer(data)
+    return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
+
+class ResetAttemptsView(DeveloperErrorViewMixin, APIView):
+    """
+    Reset problem attempts for a learner or all learners.
+
+    **POST** with `learner` query param: resets a single learner's attempts (synchronous).
+    **POST** without `learner`: queues a background task to reset all learners (asynchronous).
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.GIVE_STUDENT_EXTENSION
+
+    @method_decorator(transaction.non_atomic_requests)
+    def post(self, request, course_id, problem):
+        """Reset problem attempts for one or all learners."""
+        parsed, error_response = _parse_course_and_problem(course_id, problem)
+        if error_response:
+            return error_response
+        course_key, usage_key = parsed
+
+        learner_identifier = request.query_params.get('learner')
+
+        if learner_identifier:
+            student, error_response = _resolve_learner(learner_identifier)
+            if error_response:
+                return error_response
+
+            try:
+                enrollment.reset_student_attempts(
+                    course_key,
+                    student,
+                    usage_key,
+                    requesting_user=request.user,
+                    delete_module=False,
+                )
+            except StudentModule.DoesNotExist:
+                return Response(
+                    {'error': 'RESOURCE_NOT_FOUND',
+                     'message': 'No state found for this learner and problem',
+                     'status_code': 404},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            except sub_api.SubmissionError:
+                return Response(
+                    {'error': 'INTERNAL_ERROR',
+                     'message': 'An error occurred while resetting attempts',
+                     'status_code': 500},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            data = {
+                'success': True,
+                'learner': student.username,
+                'problem_location': str(usage_key),
+                'message': 'Attempts reset successfully',
+            }
+            serializer = SyncOperationResultSerializer(data)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        else:
+            course = get_course_with_access(request.user, 'staff', course_key, depth=None)
+            if not has_access(request.user, 'instructor', course):
+                return Response(
+                    {'error': 'PERMISSION_DENIED',
+                     'message': 'Instructor access required for bulk operations',
+                     'status_code': 403},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            try:
+                instructor_task = task_api.submit_reset_problem_attempts_for_all_students(
+                    request, usage_key
+                )
+            except AlreadyRunningError:
+                return Response(
+                    {'error': 'ALREADY_RUNNING',
+                     'message': 'A reset task is already running for this problem',
+                     'status_code': 409},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            except ItemNotFoundError:
+                return Response(
+                    {'error': 'RESOURCE_NOT_FOUND',
+                     'message': 'Problem not found',
+                     'status_code': 404},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            return _build_async_response(instructor_task, course_id, usage_key)
+
+
+class DeleteStateView(DeveloperErrorViewMixin, APIView):
+    """
+    Delete a learner's problem state permanently.
+
+    The `learner` query parameter is required. This operation is destructive
+    and cannot be undone.
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.GIVE_STUDENT_EXTENSION
+
+    @method_decorator(transaction.non_atomic_requests)
+    def delete(self, request, course_id, problem):
+        """Delete learner problem state."""
+        parsed, error_response = _parse_course_and_problem(course_id, problem)
+        if error_response:
+            return error_response
+        course_key, usage_key = parsed
+
+        learner_identifier = request.query_params.get('learner')
+        if not learner_identifier:
+            return Response(
+                {'error': 'INVALID_PARAMETER',
+                 'message': 'The learner parameter is required',
+                 'status_code': 400},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        student, error_response = _resolve_learner(learner_identifier)
+        if error_response:
+            return error_response
+
+        try:
+            enrollment.reset_student_attempts(
+                course_key,
+                student,
+                usage_key,
+                requesting_user=request.user,
+                delete_module=True,
+            )
+        except StudentModule.DoesNotExist:
+            return Response(
+                {'error': 'RESOURCE_NOT_FOUND',
+                 'message': 'No state found for this learner and problem',
+                 'status_code': 404},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except sub_api.SubmissionError:
+            return Response(
+                {'error': 'INTERNAL_ERROR',
+                 'message': 'An error occurred while deleting state',
+                 'status_code': 500},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        data = {
+            'success': True,
+            'learner': student.username,
+            'problem_location': str(usage_key),
+            'message': 'State deleted successfully',
+        }
+        serializer = SyncOperationResultSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class RescoreView(DeveloperErrorViewMixin, APIView):
+    """
+    Rescore problem submissions for a learner or all learners.
+
+    **POST** with `learner` query param: rescores a single learner (asynchronous task).
+    **POST** without `learner`: rescores all learners (asynchronous task).
+
+    Optionally accepts `only_if_higher=true` query param to only update if new score is higher.
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.OVERRIDE_GRADES
+
+    @method_decorator(transaction.non_atomic_requests)
+    def post(self, request, course_id, problem):
+        """Rescore problem submissions."""
+        parsed, error_response = _parse_course_and_problem(course_id, problem)
+        if error_response:
+            return error_response
+        course_key, usage_key = parsed
+
+        only_if_higher = request.query_params.get('only_if_higher', 'false').lower() == 'true'
+        learner_identifier = request.query_params.get('learner')
+
+        if learner_identifier:
+            student, error_response = _resolve_learner(learner_identifier)
+            if error_response:
+                return error_response
+
+            try:
+                instructor_task = task_api.submit_rescore_problem_for_student(
+                    request, usage_key, student, only_if_higher,
+                )
+            except NotImplementedError as exc:
+                return Response(
+                    {'error': 'INVALID_PARAMETER', 'message': str(exc), 'status_code': 400},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except ItemNotFoundError:
+                return Response(
+                    {'error': 'RESOURCE_NOT_FOUND',
+                     'message': 'Problem not found',
+                     'status_code': 404},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            except AlreadyRunningError:
+                return Response(
+                    {'error': 'ALREADY_RUNNING',
+                     'message': 'A rescore task is already running for this learner and problem',
+                     'status_code': 409},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            return _build_async_response(
+                instructor_task, course_id, usage_key, learner_scope=student.username
+            )
+
+        else:
+            course = get_course_with_access(request.user, 'staff', course_key)
+            if not has_access(request.user, 'instructor', course):
+                return Response(
+                    {'error': 'PERMISSION_DENIED',
+                     'message': 'Instructor access required for bulk operations',
+                     'status_code': 403},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            try:
+                instructor_task = task_api.submit_rescore_problem_for_all_students(
+                    request, usage_key, only_if_higher,
+                )
+            except NotImplementedError as exc:
+                return Response(
+                    {'error': 'INVALID_PARAMETER', 'message': str(exc), 'status_code': 400},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except ItemNotFoundError:
+                return Response(
+                    {'error': 'RESOURCE_NOT_FOUND',
+                     'message': 'Problem not found',
+                     'status_code': 404},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            except AlreadyRunningError:
+                return Response(
+                    {'error': 'ALREADY_RUNNING',
+                     'message': 'A rescore task is already running for this problem',
+                     'status_code': 409},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            return _build_async_response(instructor_task, course_id, usage_key)
+
+
+class ScoreOverrideView(DeveloperErrorViewMixin, APIView):
+    """
+    Override a learner's score for a specific problem.
+
+    The `learner` query parameter is required. Accepts a JSON body with `score` field.
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.OVERRIDE_GRADES
+
+    @method_decorator(transaction.non_atomic_requests)
+    def put(self, request, course_id, problem):
+        """Override a learner's score."""
+        parsed, error_response = _parse_course_and_problem(course_id, problem)
+        if error_response:
+            return error_response
+        course_key, usage_key = parsed
+
+        learner_identifier = request.query_params.get('learner')
+        if not learner_identifier:
+            return Response(
+                {'error': 'INVALID_PARAMETER',
+                 'message': 'The learner parameter is required',
+                 'status_code': 400},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        student, error_response = _resolve_learner(learner_identifier)
+        if error_response:
+            return error_response
+
+        body_serializer = ScoreOverrideRequestSerializer(data=request.data)
+        if not body_serializer.is_valid():
+            return Response(
+                {'error': 'INVALID_PARAMETER', 'message': 'Invalid request body',
+                 'field_errors': body_serializer.errors, 'status_code': 400},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        score = body_serializer.validated_data['score']
+
+        try:
+            block = modulestore().get_item(usage_key)
+        except ItemNotFoundError:
+            return Response(
+                {'error': 'RESOURCE_NOT_FOUND',
+                 'message': 'Problem not found',
+                 'status_code': 404},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not has_access(request.user, 'staff', block):
+            return Response(
+                {'error': 'PERMISSION_DENIED',
+                 'message': 'You do not have permission to override scores for this problem',
+                 'status_code': 403},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            instructor_task = task_api.submit_override_score(
+                request, usage_key, student, score,
+            )
+        except NotImplementedError as exc:
+            return Response(
+                {'error': 'INVALID_PARAMETER', 'message': str(exc), 'status_code': 400},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValueError as exc:
+            return Response(
+                {'error': 'INVALID_PARAMETER', 'message': str(exc), 'status_code': 400},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except AlreadyRunningError:
+            return Response(
+                {'error': 'ALREADY_RUNNING',
+                 'message': 'A score override task is already running for this learner and problem',
+                 'status_code': 409},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return _build_async_response(
+            instructor_task, course_id, usage_key, learner_scope=student.username
+        )

@@ -635,3 +635,61 @@ class TaskStatusSerializer(serializers.Serializer):
     updated_at = serializers.DateTimeField(
         help_text="Last update timestamp"
     )
+
+
+class SyncOperationResultSerializer(serializers.Serializer):
+    """
+    Serializer for synchronous grading operation results.
+    """
+    success = serializers.BooleanField(
+        help_text="Whether the operation succeeded"
+    )
+    learner = serializers.CharField(
+        allow_null=True,
+        required=False,
+        help_text="Learner identifier (if applicable)"
+    )
+    problem_location = serializers.CharField(
+        allow_null=True,
+        required=False,
+        help_text="Problem location (if applicable)"
+    )
+    score = serializers.FloatField(
+        allow_null=True,
+        required=False,
+        help_text="Updated score (for override operations)"
+    )
+    previous_score = serializers.FloatField(
+        allow_null=True,
+        required=False,
+        help_text="Previous score (for override operations)"
+    )
+    message = serializers.CharField(
+        help_text="Human-readable result message"
+    )
+
+
+class AsyncOperationResultSerializer(serializers.Serializer):
+    """
+    Serializer for asynchronous grading operation results.
+    """
+    task_id = serializers.CharField(
+        help_text="Unique task identifier"
+    )
+    status_url = serializers.CharField(
+        help_text="URL to poll for task status"
+    )
+    scope = serializers.DictField(
+        required=False,
+        help_text="Scope of the operation"
+    )
+
+
+class ScoreOverrideRequestSerializer(serializers.Serializer):
+    """
+    Serializer for score override request body.
+    """
+    score = serializers.FloatField(
+        min_value=0,
+        help_text="New score value (out of problem's total possible points)"
+    )

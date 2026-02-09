@@ -1,11 +1,15 @@
 """
-Tests for Instructor API v2 GET endpoints.
+Tests for Instructor API v2 endpoints.
 """
 import json
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
+
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
+
+from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import InstructorFactory, UserFactory
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor_task.models import InstructorTask
@@ -396,3 +400,226 @@ class GradingConfigViewTestCase(ModuleStoreTestCase):
         response = self.client.get(url)
 
         self.assertIn(response.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
+
+
+class GradingEndpointTestBase(ModuleStoreTestCase):
+    """
+    Base test class for grading endpoints with real course structures,
+    real permissions, and real StudentModule records.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.course = CourseFactory.create(display_name='Test Course')
+        self.chapter = BlockFactory.create(
+            parent=self.course,
+            category='chapter',
+            display_name='Week 1'
+        )
+        self.sequential = BlockFactory.create(
+            parent=self.chapter,
+            category='sequential',
+            display_name='Homework 1'
+        )
+        self.problem = BlockFactory.create(
+            parent=self.sequential,
+            category='problem',
+            display_name='Test Problem'
+        )
+
+        # Real instructor with real course permissions
+        self.instructor = InstructorFactory(course_key=self.course.id)
+        self.client.force_authenticate(user=self.instructor)
+
+        # Real enrolled student with real module state
+        self.student = UserFactory(username='test_student', email='student@example.com')
+        CourseEnrollment.enroll(self.student, self.course.id)
+        self.student_module = StudentModule.objects.create(
+            student=self.student,
+            course_id=self.course.id,
+            module_state_key=self.problem.location,
+            state=json.dumps({'attempts': 10}),
+        )
+
+
+class ResetAttemptsViewTestCase(GradingEndpointTestBase):
+    """
+    Tests for POST /api/instructor/v2/courses/{course_key}/{problem}/grading/attempts/reset
+    """
+
+    def _get_url(self, problem=None):
+        return reverse('instructor_api_v2:reset_attempts', kwargs={
+            'course_id': str(self.course.id),
+            'problem': problem or str(self.problem.location),
+        })
+
+    def test_reset_single_learner(self):
+        """Single learner reset zeroes attempt count and returns 200."""
+        response = self.client.post(self._get_url() + '?learner=test_student')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['learner'], 'test_student')
+        self.assertEqual(data['message'], 'Attempts reset successfully')
+
+        # Verify the actual StudentModule was modified
+        self.student_module.refresh_from_db()
+        self.assertEqual(json.loads(self.student_module.state)['attempts'], 0)
+
+    @patch('lms.djangoapps.instructor_task.api.submit_reset_problem_attempts_for_all_students')
+    def test_reset_all_learners(self, mock_submit):
+        """Bulk reset queues a background task and returns 202."""
+        mock_task = MagicMock()
+        mock_task.task_id = str(uuid4())
+        mock_submit.return_value = mock_task
+
+        response = self.client.post(self._get_url())
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        data = response.json()
+        self.assertEqual(data['task_id'], mock_task.task_id)
+        self.assertIn('status_url', data)
+        self.assertEqual(data['scope']['learners'], 'all')
+        mock_submit.assert_called_once()
+
+
+class DeleteStateViewTestCase(GradingEndpointTestBase):
+    """
+    Tests for DELETE /api/instructor/v2/courses/{course_key}/{problem}/grading/state
+    """
+
+    def _get_url(self, problem=None):
+        return reverse('instructor_api_v2:delete_state', kwargs={
+            'course_id': str(self.course.id),
+            'problem': problem or str(self.problem.location),
+        })
+
+    @patch('lms.djangoapps.grades.signals.handlers.PROBLEM_WEIGHTED_SCORE_CHANGED.send')
+    def test_delete_state(self, _mock_signal):
+        """Delete state removes the StudentModule record and returns 200."""
+        response = self.client.delete(self._get_url() + '?learner=test_student')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['learner'], 'test_student')
+        self.assertEqual(data['message'], 'State deleted successfully')
+
+        # Verify the StudentModule was actually deleted
+        self.assertFalse(
+            StudentModule.objects.filter(pk=self.student_module.pk).exists()
+        )
+
+    def test_delete_state_requires_learner_param(self):
+        """DELETE without learner query param returns 400."""
+        response = self.client.delete(self._get_url())
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class RescoreViewTestCase(GradingEndpointTestBase):
+    """
+    Tests for POST /api/instructor/v2/courses/{course_key}/{problem}/grading/scores/rescore
+    """
+
+    def _get_url(self, problem=None):
+        return reverse('instructor_api_v2:rescore', kwargs={
+            'course_id': str(self.course.id),
+            'problem': problem or str(self.problem.location),
+        })
+
+    @patch('lms.djangoapps.instructor_task.api.submit_rescore_problem_for_student')
+    def test_rescore_single_learner(self, mock_submit):
+        """Single learner rescore queues a task and returns 202."""
+        mock_task = MagicMock()
+        mock_task.task_id = str(uuid4())
+        mock_submit.return_value = mock_task
+
+        response = self.client.post(self._get_url() + '?learner=test_student')
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        data = response.json()
+        self.assertEqual(data['task_id'], mock_task.task_id)
+        self.assertEqual(data['scope']['learners'], 'test_student')
+        mock_submit.assert_called_once()
+        # Default only_if_higher should be False
+        self.assertFalse(mock_submit.call_args[0][3])
+
+    @patch('lms.djangoapps.instructor_task.api.submit_rescore_problem_for_student')
+    def test_rescore_only_if_higher(self, mock_submit):
+        """Rescore with only_if_higher=true passes the flag through."""
+        mock_task = MagicMock()
+        mock_task.task_id = str(uuid4())
+        mock_submit.return_value = mock_task
+
+        response = self.client.post(self._get_url() + '?learner=test_student&only_if_higher=true')
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertTrue(mock_submit.call_args[0][3])
+
+    @patch('lms.djangoapps.instructor_task.api.submit_rescore_problem_for_all_students')
+    def test_rescore_all_learners(self, mock_submit):
+        """Bulk rescore queues a task and returns 202."""
+        mock_task = MagicMock()
+        mock_task.task_id = str(uuid4())
+        mock_submit.return_value = mock_task
+
+        response = self.client.post(self._get_url())
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        data = response.json()
+        self.assertEqual(data['scope']['learners'], 'all')
+        mock_submit.assert_called_once()
+
+
+class ScoreOverrideViewTestCase(GradingEndpointTestBase):
+    """
+    Tests for PUT /api/instructor/v2/courses/{course_key}/{problem}/grading/scores
+    """
+
+    def _get_url(self, problem=None):
+        return reverse('instructor_api_v2:score_override', kwargs={
+            'course_id': str(self.course.id),
+            'problem': problem or str(self.problem.location),
+        })
+
+    @patch('lms.djangoapps.instructor_task.api.submit_override_score')
+    def test_override_score(self, mock_submit):
+        """Score override queues a task and returns 202."""
+        mock_task = MagicMock()
+        mock_task.task_id = str(uuid4())
+        mock_submit.return_value = mock_task
+
+        response = self.client.put(
+            self._get_url() + '?learner=test_student',
+            data={'score': 8.5},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        data = response.json()
+        self.assertEqual(data['task_id'], mock_task.task_id)
+        self.assertEqual(data['scope']['learners'], 'test_student')
+        # Verify the score value was passed through
+        self.assertEqual(mock_submit.call_args[0][3], 8.5)
+
+    def test_override_requires_learner_param(self):
+        """PUT without learner query param returns 400."""
+        response = self.client.put(
+            self._get_url(),
+            data={'score': 8.5},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_override_requires_score_in_body(self):
+        """PUT without score in body returns 400."""
+        response = self.client.put(
+            self._get_url() + '?learner=test_student',
+            data={},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_override_rejects_negative_score(self):
+        """PUT with negative score returns 400."""
+        response = self.client.put(
+            self._get_url() + '?learner=test_student',
+            data={'score': -1},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
