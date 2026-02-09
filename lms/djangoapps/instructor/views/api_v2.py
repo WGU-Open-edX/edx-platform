@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 import edx_api_doc_tools as apidocs
 from edx_when import api as edx_when_api
+from edx_when import models as edx_when_models
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey, UsageKey
 from rest_framework import status
@@ -25,7 +26,9 @@ from django.views.decorators.cache import cache_control
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
 from common.djangoapps.util.json_request import JsonResponseBadRequest
+from django.db.models import OuterRef, Subquery
 
+from lms.djangoapps.course_api import blocks
 from lms.djangoapps.courseware.tabs import get_course_tab_list
 from lms.djangoapps.instructor import permissions
 from lms.djangoapps.instructor.views.api import _display_unit, get_student_from_identifier
@@ -43,6 +46,7 @@ from .serializers_v2 import (
     ORASummarySerializer,
 )
 from .tools import (
+    DashboardError,
     find_unit,
     get_units_with_due_date,
     set_due_date_extension,
@@ -399,6 +403,55 @@ class UnitDueDateExtension:
         )
 
 
+def _ensure_key(key_class, key_obj):
+    if not isinstance(key_obj, key_class):
+        key_obj = key_class.from_string(key_obj)
+    return key_obj
+
+
+def get_overrides_for_course(course_id):
+    """
+    Return all date overrides for a particular course.
+
+    Arguments:
+        course_id: either a CourseKey or string representation of same
+
+    Returns:
+        list of (username, full_name, email, location, date)
+    """
+    course_id = _ensure_key(CourseKey, course_id)
+
+    base_queryset = edx_when_models.UserDate.objects.filter(
+        content_date__course_id=course_id,
+        content_date__active=True,
+    )
+
+    # For each content_date location and user, we want the most recent override,
+    # so we do a subquery to get the latest modified date for each content_date location and user combination,
+    # and then filter to just those.
+    latest_per_location = base_queryset.filter(
+        content_date__location=OuterRef("content_date__location"),
+        user=OuterRef("user"),
+    ).order_by("-modified")
+
+    query = base_queryset.filter(
+        id=Subquery(latest_per_location.values("id")[:1])
+    ).order_by('-modified')
+
+    dates = []
+    for udate in query:
+        username = udate.user.username
+        try:
+            full_name = udate.user.profile.name
+        except AttributeError:
+            full_name = 'unknown'
+        email = udate.user.email
+        override = udate.actual_date
+        location = udate.content_date.location
+        dates.append((username, full_name, email, location, override))
+    return dates
+
+
 class UnitExtensionsView(ListAPIView):
     """
     Retrieve a paginated list of due date extensions for units in a course.
@@ -491,8 +544,11 @@ class UnitExtensionsView(ListAPIView):
             except InvalidKeyError:
                 # If block_id is invalid, return empty list
                 unit_due_date_extensions = []
+            except DashboardError as error:
+                log.error(f"Error fetching overrides for block {block_id_filter} in course {course_id}: {error}")
+                unit_due_date_extensions = []
         else:
-            query_data = edx_when_api.get_overrides_for_course(course.id)
+            query_data = get_overrides_for_course(course.id)
             unit_due_date_extensions = [
                 UnitDueDateExtension.from_course_tuple(row, units_dict)
                 for row in query_data
