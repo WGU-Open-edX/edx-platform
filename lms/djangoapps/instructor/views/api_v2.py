@@ -33,7 +33,7 @@ from lms.djangoapps.instructor.views.api import _display_unit, get_student_from_
 from lms.djangoapps.instructor.views.instructor_task_helpers import extract_task_features
 from lms.djangoapps.instructor_task import api as task_api
 from lms.djangoapps.instructor_task.api_helper import AlreadyRunningError, QueueConnectionError
-from lms.djangoapps.instructor_task.data import ReportType
+from lms.djangoapps.instructor.constants import ReportType
 from lms.djangoapps.instructor.ora import get_open_response_assessment_list, get_ora_summary
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin
 from openedx.core.lib.courses import get_course_by_id

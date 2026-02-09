@@ -3,6 +3,8 @@ Public data structures for the instructor_task app.
 """
 from enum import Enum
 
+from lms.djangoapps.instructor.constants import ReportType
+
 
 class InstructorTaskTypes(str, Enum):
     """
@@ -35,26 +37,8 @@ class InstructorTaskTypes(str, Enum):
     RESET_PROBLEM_ATTEMPTS = "reset_problem_attempts"
 
 
-class ReportType(str, Enum):
-    """
-    Enum for report types used in the instructor dashboard downloads API.
-    These are the user-facing report type identifiers.
-    """
-    ENROLLED_STUDENTS = "enrolled_students"
-    PENDING_ENROLLMENTS = "pending_enrollments"
-    PENDING_ACTIVATIONS = "pending_activations"
-    ANONYMIZED_STUDENT_IDS = "anonymized_student_ids"
-    GRADE = "grade"
-    PROBLEM_GRADE = "problem_grade"
-    PROBLEM_RESPONSES = "problem_responses"
-    ORA2_SUMMARY = "ora2_summary"
-    ORA2_DATA = "ora2_data"
-    ORA2_SUBMISSION_FILES = "ora2_submission_files"
-    ISSUED_CERTIFICATES = "issued_certificates"
-    UNKNOWN = "unknown"
-
-
 # Mapping from InstructorTaskTypes to ReportType for downloadable reports
+# This bridges backend task types with user-facing API report identifiers
 TASK_TYPE_TO_REPORT_TYPE = {
     InstructorTaskTypes.PROFILE_INFO_CSV: ReportType.ENROLLED_STUDENTS,
     InstructorTaskTypes.MAY_ENROLL_INFO_CSV: ReportType.PENDING_ENROLLMENTS,
