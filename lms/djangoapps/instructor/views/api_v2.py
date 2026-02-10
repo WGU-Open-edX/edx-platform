@@ -588,7 +588,8 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
                 {
                     "report_name": "course-v1_edX_DemoX_Demo_Course_grade_report_2024-01-26-1030.csv",
                     "report_url":
-                        "/grades/course-v1:edX+DemoX+Demo_Course/course-v1_edX_DemoX_Demo_Course_grade_report_2024-01-26-1030.csv",
+                        "/grades/course-v1:edX+DemoX+Demo_Course/"
+                        "course-v1_edX_DemoX_Demo_Course_grade_report_2024-01-26-1030.csv",
                     "date_generated": "2024-01-26T10:30:00Z",
                     "report_type": "grade"  # Uses ReportType.GRADE.value
                 }

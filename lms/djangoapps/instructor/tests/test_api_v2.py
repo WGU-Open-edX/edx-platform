@@ -1688,10 +1688,16 @@ class ReportDownloadsViewTest(SharedModuleStoreTestCase):
         # Mock report store
         mock_store = Mock()
         mock_store.links_for.return_value = [
-            ('course-v1_edX_TestX_Test_Course_grade_report_2024-01-26-1030.csv',
-             '/grades/course-v1:edX+TestX+Test_Course/course-v1_edX_TestX_Test_Course_grade_report_2024-01-26-1030.csv'),
-            ('course-v1_edX_TestX_Test_Course_enrolled_students_2024-01-25-0900.csv',
-             '/grades/course-v1:edX+TestX+Test_Course/course-v1_edX_TestX_Test_Course_enrolled_students_2024-01-25-0900.csv'),
+            (
+                'course-v1_edX_TestX_Test_Course_grade_report_2024-01-26-1030.csv',
+                '/grades/course-v1:edX+TestX+Test_Course/'
+                'course-v1_edX_TestX_Test_Course_grade_report_2024-01-26-1030.csv'
+            ),
+            (
+                'course-v1_edX_TestX_Test_Course_enrolled_students_2024-01-25-0900.csv',
+                '/grades/course-v1:edX+TestX+Test_Course/'
+                'course-v1_edX_TestX_Test_Course_enrolled_students_2024-01-25-0900.csv'
+            ),
         ]
         mock_report_store.return_value = mock_store
 
@@ -1768,17 +1774,61 @@ class ReportDownloadsViewTest(SharedModuleStoreTestCase):
 
     @patch('lms.djangoapps.instructor.views.api_v2.ReportStore.from_config')
     @ddt.data(
-        ('course-v1_edX_TestX_Test_Course_grade_report_2024-01-26-1030.csv', 'grade', '2024-01-26T10:30:00Z'),
-        ('course-v1_edX_TestX_Test_Course_enrolled_students_2024-01-25-0900.csv', 'enrolled_students', '2024-01-25T09:00:00Z'),
-        ('course-v1_edX_TestX_Test_Course_problem_grade_report_2024-02-15-1545.csv', 'problem_grade', '2024-02-15T15:45:00Z'),
-        ('course-v1_edX_TestX_Test_Course_ora2_summary_2024-03-10-2030.csv', 'ora2_summary', '2024-03-10T20:30:00Z'),
-        ('course-v1_edX_TestX_Test_Course_ora2_data_2024-03-11-1200.csv', 'ora2_data', '2024-03-11T12:00:00Z'),
-        ('course-v1_edX_TestX_Test_Course_ora2_submission_files_2024-03-12-0800.zip', 'ora2_submission_files', '2024-03-12T08:00:00Z'),
-        ('course-v1_edX_TestX_Test_Course_certificate_report_2024-04-01-1000.csv', 'issued_certificates', '2024-04-01T10:00:00Z'),
-        ('course-v1_edX_TestX_Test_Course_problem_responses_2024-05-20-1430.csv', 'problem_responses', '2024-05-20T14:30:00Z'),
-        ('course-v1_edX_TestX_Test_Course_may_enroll_2024-06-01-0930.csv', 'pending_enrollments', '2024-06-01T09:30:00Z'),
-        ('course-v1_edX_TestX_Test_Course_inactive_enrolled_2024-07-15-1115.csv', 'pending_activations', '2024-07-15T11:15:00Z'),
-        ('course-v1_edX_TestX_Test_Course_anon_ids_2024-08-20-1600.csv', 'anonymized_student_ids', '2024-08-20T16:00:00Z'),
+        (
+            'course-v1_edX_TestX_Test_Course_grade_report_2024-01-26-1030.csv',
+            'grade',
+            '2024-01-26T10:30:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_enrolled_students_2024-01-25-0900.csv',
+            'enrolled_students',
+            '2024-01-25T09:00:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_problem_grade_report_2024-02-15-1545.csv',
+            'problem_grade',
+            '2024-02-15T15:45:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_ora2_summary_2024-03-10-2030.csv',
+            'ora2_summary',
+            '2024-03-10T20:30:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_ora2_data_2024-03-11-1200.csv',
+            'ora2_data',
+            '2024-03-11T12:00:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_ora2_submission_files_2024-03-12-0800.zip',
+            'ora2_submission_files',
+            '2024-03-12T08:00:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_certificate_report_2024-04-01-1000.csv',
+            'issued_certificates',
+            '2024-04-01T10:00:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_problem_responses_2024-05-20-1430.csv',
+            'problem_responses',
+            '2024-05-20T14:30:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_may_enroll_2024-06-01-0930.csv',
+            'pending_enrollments',
+            '2024-06-01T09:30:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_inactive_enrolled_2024-07-15-1115.csv',
+            'pending_activations',
+            '2024-07-15T11:15:00Z'
+        ),
+        (
+            'course-v1_edX_TestX_Test_Course_anon_ids_2024-08-20-1600.csv',
+            'anonymized_student_ids',
+            '2024-08-20T16:00:00Z'
+        ),
     )
     @ddt.unpack
     def test_report_type_detection(self, filename, expected_type, expected_date, mock_report_store):
