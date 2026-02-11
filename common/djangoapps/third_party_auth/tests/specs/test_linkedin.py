@@ -46,7 +46,7 @@ class LinkedInOauth2IntegrationTest(base.Oauth2IntegrationTest):  # lint-amnesty
         'id': 'id_value',
         'firstName': {
             "localized": {
-                "en_US": "John"
+                "en_US": "Doe"
             },
             "preferredLocale": {
                 "country": "US",
