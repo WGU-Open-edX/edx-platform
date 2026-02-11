@@ -35,6 +35,10 @@ from lms.djangoapps.instructor_task import api as task_api
 from lms.djangoapps.instructor_task.api_helper import AlreadyRunningError, QueueConnectionError
 from lms.djangoapps.instructor.constants import ReportType
 from lms.djangoapps.instructor.ora import get_open_response_assessment_list, get_ora_summary
+from lms.djangoapps.instructor_analytics import basic as instructor_analytics_basic
+from lms.djangoapps.instructor_analytics import csvs as instructor_analytics_csvs
+from lms.djangoapps.instructor_task.models import ReportStore
+from lms.djangoapps.instructor_task.tasks_helper.utils import upload_csv_file_to_report_store
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin
 from openedx.core.lib.courses import get_course_by_id
 from .serializers_v2 import (
@@ -632,8 +636,6 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         """
         List all available report downloads for a course.
         """
-        from lms.djangoapps.instructor_task.models import ReportStore
-
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists
         get_course_by_id(course_key)
@@ -947,9 +949,6 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         """Generate issued certificates report."""
         from datetime import datetime
         from pytz import UTC
-        from lms.djangoapps.instructor_analytics import basic as instructor_analytics_basic
-        from lms.djangoapps.instructor_analytics import csvs as instructor_analytics_csvs
-        from lms.djangoapps.instructor_task.tasks_helper.utils import upload_csv_file_to_report_store
         import csv
         import io
 
