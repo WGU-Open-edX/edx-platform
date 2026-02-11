@@ -53,7 +53,6 @@ class LinkedInOauth2IntegrationTest(base.Oauth2IntegrationTest):  # lint-amnesty
                 "language": "en"
             }
         },
-        'emailAddress': 'user@email.com',
     }
 
     def get_username(self):
