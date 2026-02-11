@@ -31,8 +31,7 @@
     "test-xmodule-webpack": "npm run test-karma-conf -- xmodule/js/karma_xmodule_webpack.conf.js",
     "test-common": "npm run test-common-vanilla && npm run test-common-require",
     "test-common-vanilla": "npm run test-karma-conf -- common/static/karma_common.conf.js",
-    "test-common-require": "npm run test-karma-conf -- common/static/karma_common_requirejs.conf.js",
-    "test-v2-api": "pytest lms/djangoapps/instructor/tests/test_api_v2.py -v"
+    "test-common-require": "npm run test-karma-conf -- common/static/karma_common_requirejs.conf.js"
   },
   "dependencies": {
     "@babel/core": "^7",

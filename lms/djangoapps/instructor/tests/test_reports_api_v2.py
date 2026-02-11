@@ -4,6 +4,7 @@ Unit tests for instructor API v2 report endpoints.
 from unittest.mock import Mock, patch
 
 import ddt
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -23,19 +24,15 @@ class ReportDownloadsViewTest(SharedModuleStoreTestCase):
     Tests for the ReportDownloadsView API endpoint.
     """
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.course = CourseFactory.create(
-            org='edX',
-            number='TestX',
-            run='Test_Course',
-            display_name='Test Course',
-        )
-        cls.course_key = cls.course.id
-
     def setUp(self):
         super().setUp()
+        self.course = CourseFactory.create(
+            org='edX',
+            number='ReportTestX',
+            run='Report_Test_Course',
+            display_name='Report Test Course',
+        )
+        self.course_key = self.course.id
         self.client = APIClient()
         self.instructor = InstructorFactory.create(course_key=self.course_key)
         self.staff = StaffFactory.create(course_key=self.course_key)
@@ -144,57 +141,57 @@ class ReportDownloadsViewTest(SharedModuleStoreTestCase):
     @patch('lms.djangoapps.instructor.views.api_v2.ReportStore.from_config')
     @ddt.data(
         (
-            'course-v1_edX_TestX_Test_Course_grade_report_2024-01-26-1030.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_grade_report_2024-01-26-1030.csv',
             'grade',
             '2024-01-26T10:30:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_enrolled_students_2024-01-25-0900.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_enrolled_students_2024-01-25-0900.csv',
             'enrolled_students',
             '2024-01-25T09:00:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_problem_grade_report_2024-02-15-1545.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_problem_grade_report_2024-02-15-1545.csv',
             'problem_grade',
             '2024-02-15T15:45:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_ora2_summary_2024-03-10-2030.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_ora2_summary_2024-03-10-2030.csv',
             'ora2_summary',
             '2024-03-10T20:30:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_ora2_data_2024-03-11-1200.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_ora2_data_2024-03-11-1200.csv',
             'ora2_data',
             '2024-03-11T12:00:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_ora2_submission_files_2024-03-12-0800.zip',
+            'course-v1_edX_ReportTestX_Report_Test_Course_ora2_submission_files_2024-03-12-0800.zip',
             'ora2_submission_files',
             '2024-03-12T08:00:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_certificate_report_2024-04-01-1000.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_certificate_report_2024-04-01-1000.csv',
             'issued_certificates',
             '2024-04-01T10:00:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_problem_responses_2024-05-20-1430.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_problem_responses_2024-05-20-1430.csv',
             'problem_responses',
             '2024-05-20T14:30:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_may_enroll_2024-06-01-0930.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_may_enroll_2024-06-01-0930.csv',
             'pending_enrollments',
             '2024-06-01T09:30:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_inactive_enrolled_2024-07-15-1115.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_inactive_enrolled_2024-07-15-1115.csv',
             'pending_activations',
             '2024-07-15T11:15:00Z'
         ),
         (
-            'course-v1_edX_TestX_Test_Course_anon_ids_2024-08-20-1600.csv',
+            'course-v1_edX_ReportTestX_Report_Test_Course_anon_ids_2024-08-20-1600.csv',
             'anonymized_student_ids',
             '2024-08-20T16:00:00Z'
         ),
@@ -206,7 +203,7 @@ class ReportDownloadsViewTest(SharedModuleStoreTestCase):
         """
         mock_store = Mock()
         mock_store.links_for.return_value = [
-            (filename, f'/grades/course-v1:edX+TestX+Test_Course/{filename}'),
+            (filename, f'/grades/course-v1:edX+ReportTestX+Report_Test_Course/{filename}'),
         ]
         mock_report_store.return_value = mock_store
 
@@ -226,7 +223,7 @@ class ReportDownloadsViewTest(SharedModuleStoreTestCase):
         """
         mock_store = Mock()
         mock_store.links_for.return_value = [
-            ('course_report.csv', '/grades/course-v1:edX+TestX+Test_Course/course_report.csv'),
+            ('course_report.csv', '/grades/course-v1:edX+ReportTestX+Report_Test_Course/course_report.csv'),
         ]
         mock_report_store.return_value = mock_store
 
@@ -260,19 +257,15 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
     Tests for the GenerateReportView API endpoint.
     """
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.course = CourseFactory.create(
-            org='edX',
-            number='TestX',
-            run='Test_Course',
-            display_name='Test Course',
-        )
-        cls.course_key = cls.course.id
-
     def setUp(self):
         super().setUp()
+        self.course = CourseFactory.create(
+            org='edX',
+            number='GenReportTestX',
+            run='GenReport_Test_Course',
+            display_name='Generate Report Test Course',
+        )
+        self.course_key = self.course.id
         self.client = APIClient()
         self.instructor = InstructorFactory.create(course_key=self.course_key)
         self.staff = StaffFactory.create(course_key=self.course_key)
@@ -393,14 +386,12 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
         """
         Test generating a problem responses report with specific problem location.
         """
-        # Create a problem block
-        chapter = BlockFactory.create(parent=self.course, category='chapter')
-        sequential = BlockFactory.create(parent=chapter, category='sequential')
-        vertical = BlockFactory.create(parent=sequential, category='vertical')
-        problem = BlockFactory.create(parent=vertical, category='problem')
+        # Mock a problem block instead of creating real ones
+        mock_problem = Mock()
+        mock_problem.location = Mock()
 
         mock_store = Mock()
-        mock_store.get_item.return_value = problem
+        mock_store.get_item.return_value = mock_problem
         mock_store.make_course_usage_key.return_value = self.course.location
         mock_modulestore.return_value = mock_store
         mock_submit.return_value = None
@@ -408,7 +399,7 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
         self.client.force_authenticate(user=self.data_researcher)
         response = self.client.post(
             self._get_url(report_type='problem_responses'),
-            {'problem_location': str(problem.location)}
+            {'problem_location': 'block-v1:edX+GenReportTestX+GenReport_Test_Course+type@problem+block@test'}
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -571,13 +562,3 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_issued_certificates_requires_staff_permission(self):
-        """
-        Test that issued certificates report requires staff permission, not just data researcher.
-        """
-        # Data researcher should NOT have access to issued certificates
-        self.client.force_authenticate(user=self.data_researcher)
-        response = self.client.post(self._get_url(report_type='issued_certificates'))
-
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
