@@ -46,13 +46,14 @@ class LinkedInOauth2IntegrationTest(base.Oauth2IntegrationTest):  # lint-amnesty
         'id': 'id_value',
         'firstName': {
             "localized": {
-                "en_US": "Doe"
+                "en_US": "John"
             },
             "preferredLocale": {
                 "country": "US",
                 "language": "en"
             }
         },
+        'emailAddress': 'user@email.com',
     }
 
     def get_username(self):
