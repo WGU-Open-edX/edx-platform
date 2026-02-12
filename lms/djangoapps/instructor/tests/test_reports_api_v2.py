@@ -381,14 +381,20 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
         mock_submit.assert_called_once()
 
     @patch('lms.djangoapps.instructor.views.api_v2.task_api.submit_calculate_problem_responses_csv')
+    @patch('lms.djangoapps.instructor.views.api_v2.UsageKey')
     @patch('xmodule.modulestore.django.modulestore')
-    def test_generate_problem_responses_with_location(self, mock_modulestore, mock_submit):
+    def test_generate_problem_responses_with_location(self, mock_modulestore, mock_usage_key, mock_submit):
         """
         Test generating a problem responses report with specific problem location.
         """
         # Mock a problem block instead of creating real ones
         mock_problem = Mock()
         mock_problem.location = Mock()
+
+        # Mock UsageKey.from_string to return a valid usage key
+        mock_key = Mock()
+        mock_key.map_into_course.return_value = mock_key
+        mock_usage_key.from_string.return_value = mock_key
 
         mock_store = Mock()
         mock_store.get_item.return_value = mock_problem
