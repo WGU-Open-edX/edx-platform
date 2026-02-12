@@ -381,7 +381,7 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
         mock_submit.assert_called_once()
 
     @patch('lms.djangoapps.instructor.views.api_v2.task_api.submit_calculate_problem_responses_csv')
-    @patch('xmodule.modulestore.django.modulestore')
+    @patch('lms.djangoapps.instructor.views.api_v2.modulestore')
     def test_generate_problem_responses_with_location(self, mock_modulestore, mock_submit):
         """
         Test generating a problem responses report with specific problem location.
@@ -545,7 +545,7 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    @patch('xmodule.modulestore.django.modulestore')
+    @patch('lms.djangoapps.instructor.views.api_v2.modulestore')
     @patch('lms.djangoapps.instructor.views.api_v2.task_api.submit_calculate_problem_responses_csv')
     def test_problem_responses_with_invalid_location(self, mock_submit, mock_modulestore):
         """
