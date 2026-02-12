@@ -717,7 +717,6 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
             str: ISO formatted date string or None
         """
         import re
-        from datetime import datetime
 
         date_match = re.search(r'_(\d{4}-\d{2}-\d{2}-\d{4})', filename)
         if date_match:
