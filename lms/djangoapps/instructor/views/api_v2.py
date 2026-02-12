@@ -5,32 +5,26 @@ This module contains the v2 API endpoints for instructor functionality.
 These APIs are designed to be consumed by MFEs and other API clients.
 """
 
-import csv
-import io
 import logging
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional, Tuple
 
+from dataclasses import dataclass
+from typing import Optional, Tuple
 import edx_api_doc_tools as apidocs
-from django.db import transaction
-from django.utils.decorators import method_decorator
-from django.utils.html import strip_tags
-from django.utils.translation import gettext as _
-from django.views.decorators.cache import cache_control
 from edx_when import api as edx_when_api
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey, UsageKey
-from pytz import UTC
 from rest_framework import status
-from rest_framework.exceptions import NotFound
-from rest_framework.generics import GenericAPIView, ListAPIView
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.exceptions import ItemNotFoundError
-
+from rest_framework.generics import GenericAPIView
+from rest_framework.exceptions import NotFound
+from django.db import transaction
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_control
+from django.utils.html import strip_tags
+from django.utils.translation import gettext as _
 from common.djangoapps.util.json_request import JsonResponseBadRequest
 
 from lms.djangoapps.courseware.tabs import get_course_tab_list
@@ -717,6 +711,7 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
             str: ISO formatted date string or None
         """
         import re
+        from datetime import datetime
 
         date_match = re.search(r'_(\d{4}-\d{2}-\d{2}-\d{4})', filename)
         if date_match:
@@ -905,6 +900,9 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
     def _generate_problem_responses_report(self, request, course_key):
         """Generate problem responses report."""
+        from xmodule.modulestore.django import modulestore
+        from xmodule.modulestore.exceptions import ItemNotFoundError
+
         problem_location = request.data.get('problem_location')
 
         # Validate problem location if provided
@@ -949,6 +947,11 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
     def _generate_issued_certificates_report(self, request, course_key):
         """Generate issued certificates report."""
+        from datetime import datetime
+        from pytz import UTC
+        import csv
+        import io
+
         # Query features for the report
         query_features = ['course_id', 'mode', 'total_issued_certificate', 'report_run_date']
         query_features_names = [
