@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Tuple
 
+from django.utils.dateparse import parse_datetime
+
 import edx_api_doc_tools as apidocs
 from django.db import transaction
 from django.utils.decorators import method_decorator
@@ -680,29 +682,28 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         name_lower = filename.lower()
 
         # Check more specific patterns first to avoid false matches
-        if 'inactive' in name_lower and 'enrolled' in name_lower:
+        # Match exact report names from the filename format: {course_prefix}_{csv_name}_{timestamp}.csv
+        if 'inactive_enrolled_students' in name_lower:
             return ReportType.PENDING_ACTIVATIONS.value
-        elif 'problem' in name_lower and 'grade' in name_lower:
+        elif 'problem_grade_report' in name_lower:
             return ReportType.PROBLEM_GRADE.value
-        elif 'ora2_submission' in name_lower or 'submission_files' in name_lower:
+        elif 'ora_submission' in name_lower or 'submission_files' in name_lower:
             return ReportType.ORA2_SUBMISSION_FILES.value
-        elif 'ora2_summary' in name_lower or 'ora_summary' in name_lower:
+        elif 'ora_summary' in name_lower:
             return ReportType.ORA2_SUMMARY.value
-        elif 'ora2_data' in name_lower or 'ora_data' in name_lower:
+        elif 'ora_data' in name_lower:
             return ReportType.ORA2_DATA.value
         elif 'may_enroll' in name_lower:
             return ReportType.PENDING_ENROLLMENTS.value
-        elif 'profile' in name_lower or 'student_profile' in name_lower:
-            return ReportType.ENROLLED_STUDENTS.value
         elif 'student_state' in name_lower or 'problem_responses' in name_lower:
             return ReportType.PROBLEM_RESPONSES.value
-        elif 'anon' in name_lower or 'anonymous' in name_lower:
+        elif 'anonymized_ids' in name_lower or 'anon' in name_lower:
             return ReportType.ANONYMIZED_STUDENT_IDS.value
-        elif 'certificate' in name_lower:
+        elif 'issued_certificates' in name_lower or 'certificate' in name_lower:
             return ReportType.ISSUED_CERTIFICATES.value
-        elif 'grade' in name_lower:
+        elif 'grade_report' in name_lower:
             return ReportType.GRADE.value
-        elif 'enrolled' in name_lower:
+        elif 'enrolled_students' in name_lower or 'profile' in name_lower:
             return ReportType.ENROLLED_STUDENTS.value
 
         return ReportType.UNKNOWN.value
@@ -720,11 +721,11 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         date_match = re.search(r'_(\d{4}-\d{2}-\d{2}-\d{4})', filename)
         if date_match:
             date_str = date_match.group(1)
-            try:
-                dt = datetime.strptime(date_str, '%Y-%m-%d-%H%M')
-                return dt.strftime('%Y-%m-%dT%H:%M:00Z')
-            except ValueError:
-                pass
+            # Convert filename format (YYYY-MM-DD-HHMM) to ISO format for parsing
+            iso_date_str = f"{date_str[:10]}T{date_str[11:13]}:{date_str[13:15]}:00Z"
+            dt = parse_datetime(iso_date_str)
+            if dt:
+                return dt.isoformat()
         return None
 
 
@@ -844,19 +845,19 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         try:
             success_message = handler(request, course_key)
         except AlreadyRunningError as error:
-            log.warning(f"Task already running for {report_type} report: {error}")
+            log.warning("Task already running for %s report: %s", report_type, error)
             return Response(
                 {'error': _('A report generation task is already running. Please wait for it to complete.')},
                 status=status.HTTP_400_BAD_REQUEST
             )
         except QueueConnectionError as error:
-            log.error(f"Queue connection error for {report_type} report task: {error}")
+            log.error("Queue connection error for %s report task: %s", report_type, error)
             return Response(
                 {'error': _('Unable to connect to the task queue. Please try again later.')},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
         except ValueError as error:
-            log.error(f"Error submitting {report_type} report task: {error}")
+            log.error("Error submitting %s report task: %s", report_type, error)
             return Response(
                 {'error': str(error)},
                 status=status.HTTP_400_BAD_REQUEST

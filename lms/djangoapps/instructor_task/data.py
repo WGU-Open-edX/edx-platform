@@ -35,19 +35,3 @@ class InstructorTaskTypes(str, Enum):
     RESCORE_PROBLEM = "rescore_problem"
     RESCORE_PROBLEM_IF_HIGHER = "rescore_problem_if_higher"
     RESET_PROBLEM_ATTEMPTS = "reset_problem_attempts"
-
-
-# Mapping from InstructorTaskTypes to ReportType for downloadable reports
-# This bridges backend task types with user-facing API report identifiers
-TASK_TYPE_TO_REPORT_TYPE = {
-    InstructorTaskTypes.PROFILE_INFO_CSV: ReportType.ENROLLED_STUDENTS,
-    InstructorTaskTypes.MAY_ENROLL_INFO_CSV: ReportType.PENDING_ENROLLMENTS,
-    InstructorTaskTypes.INACTIVE_ENROLLED_STUDENTS_INFO_CSV: ReportType.PENDING_ACTIVATIONS,
-    InstructorTaskTypes.GENERATE_ANONYMOUS_IDS_FOR_COURSE: ReportType.ANONYMIZED_STUDENT_IDS,
-    InstructorTaskTypes.GRADE_COURSE: ReportType.GRADE,
-    InstructorTaskTypes.GRADE_PROBLEMS: ReportType.PROBLEM_GRADE,
-    InstructorTaskTypes.PROBLEM_RESPONSES_CSV: ReportType.PROBLEM_RESPONSES,
-    InstructorTaskTypes.EXPORT_ORA2_SUMMARY: ReportType.ORA2_SUMMARY,
-    InstructorTaskTypes.EXPORT_ORA2_DATA: ReportType.ORA2_DATA,
-    InstructorTaskTypes.EXPORT_ORA2_SUBMISSION_FILES: ReportType.ORA2_SUBMISSION_FILES,
-}
