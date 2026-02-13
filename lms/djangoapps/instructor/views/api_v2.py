@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Tuple
 
-from django.utils.dateparse import parse_datetime
 
 import edx_api_doc_tools as apidocs
 from django.db import transaction
@@ -687,11 +686,11 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
             return ReportType.PENDING_ACTIVATIONS.value
         elif 'problem_grade_report' in name_lower:
             return ReportType.PROBLEM_GRADE.value
-        elif 'ora2_submission' in name_lower or 'submission_files' in name_lower:
+        elif 'ora2_submission' in name_lower or 'submission_files' in name_lower or 'ora_submission' in name_lower:
             return ReportType.ORA2_SUBMISSION_FILES.value
-        elif 'ora2_summary' in name_lower:
+        elif 'ora2_summary' in name_lower or 'ora_summary' in name_lower:
             return ReportType.ORA2_SUMMARY.value
-        elif 'ora2_data' in name_lower:
+        elif 'ora2_data' in name_lower or 'ora_data' in name_lower:
             return ReportType.ORA2_DATA.value
         elif 'may_enroll' in name_lower:
             return ReportType.PENDING_ENROLLMENTS.value
@@ -721,12 +720,13 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
         date_match = re.search(r'_(\d{4}-\d{2}-\d{2}-\d{4})', filename)
         if date_match:
             date_str = date_match.group(1)
-            # Convert filename format (YYYY-MM-DD-HHMM) to ISO format for parsing
-            iso_date_str = f"{date_str[:10]}T{date_str[11:13]}:{date_str[13:15]}:00Z"
-            dt = parse_datetime(iso_date_str)
-            if dt:
-                # Replace timezone offset format (+00:00) with Z for consistency
-                return dt.isoformat().replace('+00:00', 'Z')
+            try:
+                # Parse the date string (YYYY-MM-DD-HHMM) directly
+                dt = datetime.strptime(date_str, '%Y-%m-%d-%H%M')
+                # Format as ISO 8601 with UTC timezone
+                return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+            except ValueError:
+                pass
         return None
 
 
@@ -868,12 +868,8 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
     def _generate_enrolled_students_report(self, request, course_key):
         """Generate enrolled students report."""
-        query_features = [
-            'id', 'username', 'name', 'email', 'language', 'location',
-            'year_of_birth', 'gender', 'level_of_education', 'mailing_address',
-            'goals', 'enrollment_mode', 'verification_status', 'enrollment_date',
-            'last_login', 'cohort', 'team', 'city', 'country'
-        ]
+        # Use get_available_features to include any custom attributes configured for the course
+        query_features = list(instructor_analytics_basic.get_available_features(course_key))
         task_api.submit_calculate_students_features_csv(request, course_key, query_features)
         return _('The enrolled student report is being created.')
 

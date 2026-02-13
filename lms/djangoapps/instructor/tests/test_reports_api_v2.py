@@ -296,18 +296,22 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
         self.assertIn('status', response.data)
         mock_submit.assert_called_once()
 
+    @patch('lms.djangoapps.instructor.views.api_v2.instructor_analytics_basic.get_available_features')
     @patch('lms.djangoapps.instructor.views.api_v2.task_api.submit_calculate_students_features_csv')
-    def test_generate_enrolled_students_report(self, mock_submit):
+    def test_generate_enrolled_students_report(self, mock_submit, mock_get_features):
         """
         Test generating an enrolled students report.
+        Verifies that get_available_features is called to support custom attributes.
         """
         mock_submit.return_value = None
+        mock_get_features.return_value = ('id', 'username', 'email', 'custom_field')
 
         self.client.force_authenticate(user=self.data_researcher)
         response = self.client.post(self._get_url(report_type='enrolled_students'))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('status', response.data)
+        mock_get_features.assert_called_once_with(self.course.id)
         mock_submit.assert_called_once()
 
     @patch('lms.djangoapps.instructor.views.api_v2.task_api.submit_calculate_may_enroll_csv')

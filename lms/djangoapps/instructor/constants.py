@@ -1,7 +1,7 @@
 """
 Constants used by Instructor.
 """
-from enum import Enum
+from enum import StrEnum
 
 # this is the UserPreference key for the user's recipient invoice copy
 INVOICE_KEY = 'pref-invoice-copy'
@@ -10,7 +10,7 @@ INVOICE_KEY = 'pref-invoice-copy'
 INSTRUCTOR_DASHBOARD_PLUGIN_VIEW_NAME = 'instructor_dashboard'
 
 
-class ReportType(str, Enum):
+class ReportType(StrEnum):
     """
     Enum for report types used in the instructor dashboard downloads API.
     These are the user-facing report type identifiers.
