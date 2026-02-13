@@ -683,15 +683,15 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
 
         # Check more specific patterns first to avoid false matches
         # Match exact report names from the filename format: {course_prefix}_{csv_name}_{timestamp}.csv
-        if 'inactive_enrolled_students' in name_lower:
+        if 'inactive_enrolled' in name_lower:
             return ReportType.PENDING_ACTIVATIONS.value
         elif 'problem_grade_report' in name_lower:
             return ReportType.PROBLEM_GRADE.value
-        elif 'ora_submission' in name_lower or 'submission_files' in name_lower:
+        elif 'ora2_submission' in name_lower or 'submission_files' in name_lower:
             return ReportType.ORA2_SUBMISSION_FILES.value
-        elif 'ora_summary' in name_lower:
+        elif 'ora2_summary' in name_lower:
             return ReportType.ORA2_SUMMARY.value
-        elif 'ora_data' in name_lower:
+        elif 'ora2_data' in name_lower:
             return ReportType.ORA2_DATA.value
         elif 'may_enroll' in name_lower:
             return ReportType.PENDING_ENROLLMENTS.value
@@ -725,7 +725,8 @@ class ReportDownloadsView(DeveloperErrorViewMixin, APIView):
             iso_date_str = f"{date_str[:10]}T{date_str[11:13]}:{date_str[13:15]}:00Z"
             dt = parse_datetime(iso_date_str)
             if dt:
-                return dt.isoformat()
+                # Replace timezone offset format (+00:00) with Z for consistency
+                return dt.isoformat().replace('+00:00', 'Z')
         return None
 
 

@@ -3,8 +3,6 @@ Public data structures for the instructor_task app.
 """
 from enum import Enum
 
-from lms.djangoapps.instructor.constants import ReportType
-
 
 class InstructorTaskTypes(str, Enum):
     """
