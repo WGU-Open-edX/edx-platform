@@ -15,6 +15,7 @@ from typing import Optional, Tuple
 
 
 import edx_api_doc_tools as apidocs
+from django.conf import settings
 from django.db import transaction
 from django.utils.decorators import method_decorator
 from django.utils.html import strip_tags
@@ -34,6 +35,8 @@ from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
 
 from common.djangoapps.util.json_request import JsonResponseBadRequest
+from openedx.core.djangoapps.course_groups.cohorts import is_course_cohorted
+from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 
 from lms.djangoapps.courseware.tabs import get_course_tab_list
 from lms.djangoapps.instructor import permissions
@@ -60,6 +63,7 @@ from .serializers_v2 import (
 from .tools import (
     find_unit,
     get_units_with_due_date,
+    keep_field_private,
     set_due_date_extension,
     title_or_url,
 )
@@ -868,8 +872,70 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
 
     def _generate_enrolled_students_report(self, request, course_key):
         """Generate enrolled students report."""
-        # Use get_available_features to include any custom attributes configured for the course
-        query_features = list(instructor_analytics_basic.get_available_features(course_key))
+        course = get_course_by_id(course_key)
+        available_features = instructor_analytics_basic.get_available_features(course_key)
+
+        # Allow for sites to be able to define additional columns.
+        # Note that adding additional columns has the potential to break
+        # the student profile report due to a character limit on the
+        # asynchronous job input which in this case is a JSON string
+        # containing the list of columns to include in the report.
+        # TODO: Refactor the student profile report code to remove the list of columns
+        # that should be included in the report from the asynchronous job input.
+        # We need to clone the list because we modify it below
+        query_features = list(configuration_helpers.get_value('student_profile_download_fields', []))
+
+        if not query_features:
+            query_features = [
+                'id', 'username', 'name', 'email', 'language', 'location',
+                'year_of_birth', 'gender', 'level_of_education', 'mailing_address',
+                'goals', 'enrollment_mode', 'last_login', 'date_joined', 'external_user_key',
+                'enrollment_date',
+            ]
+
+        additional_attributes = configuration_helpers.get_value_for_org(
+            course_key.org,
+            "additional_student_profile_attributes"
+        )
+        if additional_attributes:
+            # Fail fast: must be list/tuple of strings.
+            if not isinstance(additional_attributes, (list, tuple)):
+                raise ValueError(
+                    _('Invalid additional student attribute configuration: expected list of strings, got {type}.')
+                    .format(type=type(additional_attributes).__name__)
+                )
+            if not all(isinstance(v, str) for v in additional_attributes):
+                raise ValueError(
+                    _('Invalid additional student attribute configuration: all entries must be strings.')
+                )
+            # Reject empty string entries explicitly.
+            if any(v == '' for v in additional_attributes):
+                raise ValueError(
+                    _('Invalid additional student attribute configuration: empty attribute names are not allowed.')
+                )
+            # Validate each attribute is in available_features; allow duplicates as provided.
+            invalid = [v for v in additional_attributes if v not in available_features]
+            if invalid:
+                raise ValueError(
+                    _('Invalid additional student attributes: {attrs}').format(
+                        attrs=', '.join(invalid)
+                    )
+                )
+            query_features.extend(additional_attributes)
+
+        for field in settings.PROFILE_INFORMATION_REPORT_PRIVATE_FIELDS:
+            keep_field_private(query_features, field)
+
+        if is_course_cohorted(course.id):
+            query_features.append('cohort')
+
+        if course.teams_enabled:
+            query_features.append('team')
+
+        # For compatibility reasons, city and country should always appear last.
+        query_features.append('city')
+        query_features.append('country')
+
         task_api.submit_calculate_students_features_csv(request, course_key, query_features)
         return _('The enrolled student report is being created.')
 
@@ -901,32 +967,36 @@ class GenerateReportView(DeveloperErrorViewMixin, APIView):
         return _('The problem grade report is being created.')
 
     def _generate_problem_responses_report(self, request, course_key):
-        """Generate problem responses report."""
-        problem_location = request.data.get('problem_location')
+        """
+        Generate problem responses report.
 
-        # Validate problem location if provided
-        if problem_location:
-            try:
-                usage_key = UsageKey.from_string(problem_location).map_into_course(course_key)
-            except InvalidKeyError as exc:
-                raise ValueError(_('Invalid problem location format.')) from exc
+        Requires a problem_location (section or problem block id).
+        Supports optional filtering by problem types.
+        """
+        problem_location = request.data.get('problem_location', '').strip()
+        problem_types_filter = request.data.get('problem_types_filter')
 
-            # Check if the problem actually exists in the modulestore
-            store = modulestore()
-            try:
-                store.get_item(usage_key)
-            except ItemNotFoundError as exc:
-                raise ValueError(_('The problem location does not exist in this course.')) from exc
+        if not problem_location:
+            raise ValueError(_('Specify Section or Problem block id is required.'))
 
-            problem_locations_str = problem_location
-        else:
-            # When no problem location is provided, generate report for entire course
-            # Use the course root usage key to include all problems in the course
-            store = modulestore()
-            course_usage_key = store.make_course_usage_key(course_key)
-            problem_locations_str = str(course_usage_key)
+        # Validate problem location
+        try:
+            usage_key = UsageKey.from_string(problem_location).map_into_course(course_key)
+        except InvalidKeyError as exc:
+            raise ValueError(_('Invalid problem location format.')) from exc
 
-        task_api.submit_calculate_problem_responses_csv(request, course_key, problem_locations_str)
+        # Check if the problem actually exists in the modulestore
+        store = modulestore()
+        try:
+            store.get_item(usage_key)
+        except ItemNotFoundError as exc:
+            raise ValueError(_('The problem location does not exist in this course.')) from exc
+
+        problem_locations_str = problem_location
+
+        task_api.submit_calculate_problem_responses_csv(
+            request, course_key, problem_locations_str, problem_types_filter
+        )
         return _('The problem responses report is being created.')
 
     def _generate_ora2_summary_report(self, request, course_key):
