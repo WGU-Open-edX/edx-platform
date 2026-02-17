@@ -370,19 +370,14 @@ class GenerateReportViewTest(SharedModuleStoreTestCase):
         self.assertIn('status', response.data)
         mock_submit.assert_called_once()
 
-    @patch('lms.djangoapps.instructor.views.api_v2.task_api.submit_calculate_problem_responses_csv')
-    def test_generate_problem_responses_report(self, mock_submit):
+    def test_generate_problem_responses_report_missing_location(self):
         """
-        Test generating a problem responses report.
+        Test that generating a problem responses report without a problem_location returns 400.
         """
-        mock_submit.return_value = None
-
         self.client.force_authenticate(user=self.data_researcher)
         response = self.client.post(self._get_url(report_type='problem_responses'))
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('status', response.data)
-        mock_submit.assert_called_once()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @patch('lms.djangoapps.instructor.views.api_v2.task_api.submit_calculate_problem_responses_csv')
     @patch('lms.djangoapps.instructor.views.api_v2.modulestore')
