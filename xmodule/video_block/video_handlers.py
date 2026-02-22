@@ -230,6 +230,143 @@ class VideoStudentViewHandlers:
         return response
 
     @XBlock.handler
+    def get_content(self, request, dispatch):
+        """
+        API handler that returns the content of this video block in a standardized format.
+
+        Returns JSON with:
+        - content: Video metadata including URLs, transcripts, etc.
+        - content_type: Type of content (always 'video' for video blocks)
+        - display_name: The display name of the block
+        - block_id: The usage ID of the block
+        - block_type: The type of block (always 'video' for video blocks)
+        """
+        from webob import Response
+        import json
+
+        # Get video URLs
+        video_urls = []
+        if self.html5_sources:
+            video_urls.extend(self.html5_sources)
+
+        # Get public video URL if available
+        public_url = self.get_public_video_url()
+        if public_url:
+            video_urls.append(public_url)
+
+        # Get YouTube URLs if available
+        youtube_urls = {}
+        if self.youtube_id_1_0:
+            youtube_urls['1.0'] = f"https://www.youtube.com/watch?v={self.youtube_id_1_0}"
+        if self.youtube_id_0_75:
+            youtube_urls['0.75'] = f"https://www.youtube.com/watch?v={self.youtube_id_0_75}"
+        if self.youtube_id_1_25:
+            youtube_urls['1.25'] = f"https://www.youtube.com/watch?v={self.youtube_id_1_25}"
+        if self.youtube_id_1_5:
+            youtube_urls['1.5'] = f"https://www.youtube.com/watch?v={self.youtube_id_1_5}"
+
+        # Get transcript information
+        transcripts = getattr(self, 'transcripts', {})
+
+        # Get track URL and rewrite if it's a static URL
+        track_url = getattr(self, 'track', None)
+        if track_url and track_url.startswith('/static/'):
+            from xmodule.contentstore.content import StaticContent
+            from common.djangoapps.static_replace.models import AssetBaseUrlConfig, AssetExcludedExtensionsConfig
+            # Convert /static/path to proper course asset URL
+            asset_path = track_url.replace('/static/', '')
+            try:
+                base_url = AssetBaseUrlConfig.get_base_url()
+                excluded_exts = AssetExcludedExtensionsConfig.get_excluded_extensions()
+                track_url = StaticContent.get_canonicalized_asset_path(
+                    self.scope_ids.usage_id.context_key,
+                    asset_path,
+                    base_url,
+                    excluded_exts
+                )
+            except Exception:
+                # If conversion fails, keep original URL
+                pass
+
+        # Get handout URL and rewrite if it's a static URL or asset key
+        handout_url = getattr(self, 'handout', None)
+        if handout_url:
+            from xmodule.contentstore.content import StaticContent
+            from common.djangoapps.static_replace.models import AssetBaseUrlConfig, AssetExcludedExtensionsConfig
+
+            if handout_url.startswith('/static/'):
+                # Convert /static/path to proper course asset URL
+                asset_path = handout_url.replace('/static/', '')
+                try:
+                    base_url = AssetBaseUrlConfig.get_base_url()
+                    excluded_exts = AssetExcludedExtensionsConfig.get_excluded_extensions()
+                    handout_url = StaticContent.get_canonicalized_asset_path(
+                        self.scope_ids.usage_id.context_key,
+                        asset_path,
+                        base_url,
+                        excluded_exts
+                    )
+                except Exception:
+                    # If conversion fails, keep original URL
+                    pass
+            elif handout_url.startswith('/asset-v1:') or handout_url.startswith('asset-v1:'):
+                # Convert existing asset key to full course asset URL
+                try:
+                    # Remove leading slash if present
+                    asset_key_str = handout_url[1:] if handout_url.startswith('/') else handout_url
+                    # Extract just the filename from the asset key for get_canonicalized_asset_path
+                    # asset-v1:Course+type@asset+block@filename.ext -> filename.ext
+                    if '@' in asset_key_str:
+                        filename = asset_key_str.split('@')[-1]
+                        base_url = AssetBaseUrlConfig.get_base_url()
+                        excluded_exts = AssetExcludedExtensionsConfig.get_excluded_extensions()
+                        handout_url = StaticContent.get_canonicalized_asset_path(
+                            self.scope_ids.usage_id.context_key,
+                            filename,
+                            base_url,
+                            excluded_exts
+                        )
+                except Exception:
+                    # If conversion fails, keep original URL
+                    pass
+
+        content = {
+            'video_urls': video_urls,
+            'youtube_urls': youtube_urls,
+            'transcripts': transcripts,
+            'start_time': self.start_time.total_seconds() if self.start_time else 0,
+            'end_time': self.end_time.total_seconds() if self.end_time else 0,
+            'download_allowed': getattr(self, 'download_video', False),
+            'track_url': track_url,
+            'handout_url': handout_url,
+        }
+
+        # Check if this block can be completed on view
+        can_complete_on_view = False
+        completion_service = self.runtime.service(self, 'completion')
+        if completion_service and completion_service.completion_tracking_enabled():
+            can_complete_on_view = completion_service.can_mark_block_complete_on_view(self)
+
+        data = {
+            'content': content,
+            'content_type': 'video',
+            'display_name': self.display_name or 'Video Component',
+            'block_id': str(self.scope_ids.usage_id),
+            'block_type': 'video',
+            'can_complete_on_view': can_complete_on_view,
+            'metadata': {
+                'download_allowed': getattr(self, 'download_video', False),
+                'has_captions': bool(transcripts),
+                'video_duration': self.saved_video_position.total_seconds() if self.saved_video_position else 0,
+            }
+        }
+
+        return Response(
+            json.dumps(data).encode('utf-8'),
+            content_type='application/json'
+        )
+
+    @XBlock.handler
     def transcript(self, request, dispatch):
         """
         Entry point for transcript handlers for student_view.

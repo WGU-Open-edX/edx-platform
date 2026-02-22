@@ -10,6 +10,7 @@ from datetime import datetime
 
 from django.conf import settings
 from fs.errors import ResourceNotFound
+import json
 from lxml import etree
 from path import Path as path
 from web_fragments.fragment import Fragment
@@ -143,6 +144,37 @@ class _BuiltinHtmlBlockMixin(  # lint-amnesty, pylint: disable=abstract-method
 
             return data
         return self.data
+
+    @XBlock.handler
+    def get_content(self, request, suffix=''):
+        """
+        API handler that returns the content of this HTML block in a standardized format.
+
+        Returns JSON with:
+        - content: The HTML content of the block
+        - content_type: Type of content (always 'html' for HTML blocks)
+        - display_name: The display name of the block
+        - block_id: The usage ID of the block
+        - block_type: The type of block (always 'html' for HTML blocks)
+        """
+        from webob import Response
+
+        data = {
+            'content': self.get_html(),
+            'content_type': 'html',
+            'display_name': self.display_name or 'HTML Component',
+            'block_id': str(self.scope_ids.usage_id),
+            'block_type': 'html',
+            'metadata': {
+                'editor_type': getattr(self, 'editor', 'visual'),
+                'uses_latex': getattr(self, 'use_latex_compiler', False),
+            }
+        }
+
+        return Response(
+            json.dumps(data).encode('utf-8'),
+            content_type='application/json'
+        )
 
     def studio_view(self, _context):
         """
@@ -542,3 +574,53 @@ def reset_class():
 
 reset_class()
 HtmlBlock.__name__ = "HtmlBlock"
+
+# Ensure the get_content handler is available on the final HtmlBlock class
+def get_content_handler(self, request, suffix=''):
+    """
+    API handler that returns the content of this HTML block in a standardized format.
+
+    Returns JSON with:
+    - content: The HTML content of the block
+    - content_type: Type of content (always 'html' for HTML blocks)
+    - display_name: The display name of the block
+    - block_id: The usage ID of the block
+    - block_type: The type of block (always 'html' for HTML blocks)
+    """
+    from webob import Response
+
+    # Get HTML content and replace static URLs with proper course asset URLs
+    html_content = self.get_html()
+    if html_content:
+        from common.djangoapps.static_replace import replace_static_urls
+        html_content = replace_static_urls(
+            html_content,
+            course_id=self.scope_ids.usage_id.context_key
+        )
+
+    # Check if this block can be completed on view
+    can_complete_on_view = False
+    completion_service = self.runtime.service(self, 'completion')
+    if completion_service and completion_service.completion_tracking_enabled():
+        can_complete_on_view = completion_service.can_mark_block_complete_on_view(self)
+
+    data = {
+        'content': html_content,
+        'content_type': 'html',
+        'display_name': self.display_name or 'HTML Component',
+        'block_id': str(self.scope_ids.usage_id),
+        'block_type': 'html',
+        'can_complete_on_view': can_complete_on_view,
+        'metadata': {
+            'editor_type': getattr(self, 'editor', 'visual'),
+            'uses_latex': getattr(self, 'use_latex_compiler', False),
+        }
+    }
+
+    return Response(
+        json.dumps(data).encode('utf-8'),
+        content_type='application/json'
+    )
+
+# Add the handler to the final HtmlBlock class
+HtmlBlock.get_content = XBlock.handler(get_content_handler)

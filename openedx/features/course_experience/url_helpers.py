@@ -189,13 +189,34 @@ def is_request_from_learning_mfe(request: HttpRequest):
     """
     Returns whether the given request was made by the frontend-app-learning MFE.
     """
+    # Primary MFE URL
     url_str = configuration_helpers.get_value(
         'LEARNING_MICROFRONTEND_URL',
         settings.LEARNING_MICROFRONTEND_URL,
     )
-    if not url_str:
+
+    # Additional MFE URLs for development/multi-app scenarios
+    additional_urls = configuration_helpers.get_value(
+        'ADDITIONAL_LEARNING_MFE_URLS',
+        getattr(settings, 'ADDITIONAL_LEARNING_MFE_URLS', [])
+    )
+
+    # Combine all allowed URLs
+    allowed_urls = []
+    if url_str:
+        allowed_urls.append(url_str)
+    allowed_urls.extend(additional_urls)
+
+    if not allowed_urls:
         return False
 
-    url = urlparse(url_str)
-    mfe_url_base = f'{url.scheme}://{url.netloc}'
-    return request.META.get('HTTP_REFERER', '').startswith(mfe_url_base)
+    referer = request.META.get('HTTP_REFERER', '')
+
+    # Check if referer matches any of the allowed MFE URLs
+    for mfe_url in allowed_urls:
+        url = urlparse(mfe_url)
+        mfe_url_base = f'{url.scheme}://{url.netloc}'
+        if referer.startswith(mfe_url_base):
+            return True
+
+    return False
