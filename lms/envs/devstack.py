@@ -294,6 +294,12 @@ LEARNER_HOME_MICROFRONTEND_URL = 'http://localhost:1996'
 LEARNING_MICROFRONTEND_URL = os.environ.get("LEARNING_MICROFRONTEND_URL", "http://localhost:2000")
 LEARNING_MICROFRONTEND_NETLOC = os.environ.get("LEARNING_MICROFRONTEND_NETLOC", urlparse(LEARNING_MICROFRONTEND_URL).netloc)
 
+# Additional Learning MFE URLs for development scenarios (multiple apps, different ports, etc.)
+ADDITIONAL_LEARNING_MFE_URLS = [
+    "http://apps.local.openedx.io:8080",  # Your second frontend app
+    # Add more URLs as needed for your development setup
+]
+
 ###################### Cross-domain requests ######################
 ENABLE_CORS_HEADERS = True
 CORS_ALLOW_CREDENTIALS = True
