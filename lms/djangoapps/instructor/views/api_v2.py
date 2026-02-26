@@ -43,7 +43,7 @@ from openedx.core.djangoapps.course_groups.cohorts import is_course_cohorted
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 
 from lms.djangoapps.course_home_api.toggles import course_home_mfe_progress_tab_is_active
-from lms.djangoapps.grades.course_grade_factory import CourseGradeFactory
+from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.courseware.tabs import get_course_tab_list
 from lms.djangoapps.instructor import permissions
 from lms.djangoapps.instructor.views.api import _display_unit, get_student_from_identifier
@@ -1193,28 +1193,12 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
 
         gradebook_url = reverse('instructor_dashboard', kwargs={'course_id': str(course_key)})
 
-        # Reads from the persisted PersistentCourseGrade table — no recalculation.
-        grade = CourseGradeFactory().read(student, course_key=course_key)
-        current_score = {
-            'score': round(grade.percent * 100, 2),
-            'total': 100.0,
-        }
-
-        # TODO: `attempts` appears to be a problem-level concept (the counter reset
-        # by the attempts/reset endpoint) and may not belong on the course-level
-        # learner endpoint. Confirm with @wgu-jesse-stewart (PR #37743) whether this
-        # field should be removed from the Learner schema or populated differently.
-        attempts = None
-
-        # Build learner data
         learner_data = {
             'username': student.username,
             'email': student.email,
             'full_name': student.profile.name,
             'progress_url': progress_url,
             'gradebook_url': gradebook_url,
-            'current_score': current_score,
-            'attempts': attempts,
         }
 
         serializer = LearnerSerializer(learner_data)
@@ -1323,8 +1307,44 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
         problem_data = {
             'id': str(problem.location),
             'name': problem.display_name,
-            'breadcrumbs': [b for b in breadcrumbs if b.get('usage_key') is not None or breadcrumbs.index(b) == 0]
+            'breadcrumbs': [b for b in breadcrumbs if b.get('usage_key') is not None or breadcrumbs.index(b) == 0],
+            'current_score': None,
+            'attempts': None,
         }
+
+        learner_identifier = request.query_params.get('email_or_username')
+        if learner_identifier:
+            UserModel = get_user_model()
+            try:
+                student = get_user_by_username_or_email(learner_identifier)
+            except UserModel.DoesNotExist:
+                return Response(
+                    {'error': 'Learner not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            except UserModel.MultipleObjectsReturned:
+                return Response(
+                    {'error': 'Multiple learners found for the given identifier'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                student_module = StudentModule.objects.get(
+                    course_id=course_key,
+                    module_state_key=problem_key,
+                    student=student,
+                )
+                problem_data['current_score'] = {
+                    'score': student_module.grade,
+                    'total': student_module.max_grade,
+                }
+                state = json.loads(student_module.state) if student_module.state else {}
+                problem_data['attempts'] = {
+                    'current': state.get('attempts', 0),
+                    'total': problem.max_attempts,
+                }
+            except StudentModule.DoesNotExist:
+                pass
 
         serializer = ProblemSerializer(problem_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
