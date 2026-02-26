@@ -7,6 +7,7 @@ These APIs are designed to be consumed by MFEs and other API clients.
 
 import csv
 import io
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from typing import Optional, Tuple
 
 import edx_api_doc_tools as apidocs
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -35,11 +37,13 @@ from rest_framework.views import APIView
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
 
+from common.djangoapps.student.models.user import get_user_by_username_or_email
 from common.djangoapps.util.json_request import JsonResponseBadRequest
 from openedx.core.djangoapps.course_groups.cohorts import is_course_cohorted
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 
 from lms.djangoapps.course_home_api.toggles import course_home_mfe_progress_tab_is_active
+from lms.djangoapps.grades.course_grade_factory import CourseGradeFactory
 from lms.djangoapps.courseware.tabs import get_course_tab_list
 from lms.djangoapps.instructor import permissions
 from lms.djangoapps.instructor.views.api import _display_unit, get_student_from_identifier
@@ -60,6 +64,8 @@ from .serializers_v2 import (
     CourseInformationSerializerV2,
     BlockDueDateSerializerV2,
     LearnerSerializer,
+    ProblemSerializer,
+    TaskStatusSerializer,
     UnitExtensionSerializer,
     ORASerializer,
     ORASummarySerializer,
@@ -1161,12 +1167,18 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        UserModel = get_user_model()
         try:
-            student = get_student_from_identifier(email_or_username)
-        except Exception:  # pylint: disable=broad-except
+            student = get_user_by_username_or_email(email_or_username)
+        except UserModel.DoesNotExist:
             return Response(
                 {'error': 'Learner not found'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+        except UserModel.MultipleObjectsReturned:
+            return Response(
+                {'error': 'Multiple learners found for the given identifier'},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
         # Build progress URL (MFE or legacy depending on feature flag)
@@ -1181,16 +1193,28 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
 
         gradebook_url = reverse('instructor_dashboard', kwargs={'course_id': str(course_key)})
 
+        # Reads from the persisted PersistentCourseGrade table — no recalculation.
+        grade = CourseGradeFactory().read(student, course_key=course_key)
+        current_score = {
+            'score': round(grade.percent * 100, 2),
+            'total': 100.0,
+        }
+
+        # TODO: `attempts` appears to be a problem-level concept (the counter reset
+        # by the attempts/reset endpoint) and may not belong on the course-level
+        # learner endpoint. Confirm with @wgu-jesse-stewart (PR #37743) whether this
+        # field should be removed from the Learner schema or populated differently.
+        attempts = None
+
         # Build learner data
         learner_data = {
             'username': student.username,
             'email': student.email,
-            'first_name': student.first_name,
-            'last_name': student.last_name,
+            'full_name': student.profile.name,
             'progress_url': progress_url,
             'gradebook_url': gradebook_url,
-            'current_score': None,
-            'attempts': None,
+            'current_score': current_score,
+            'attempts': attempts,
         }
 
         serializer = LearnerSerializer(learner_data)
@@ -1302,7 +1326,6 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
             'breadcrumbs': [b for b in breadcrumbs if b.get('usage_key') is not None or breadcrumbs.index(b) == 0]
         }
 
-        from .serializers_v2 import ProblemSerializer
         serializer = ProblemSerializer(problem_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1392,7 +1415,6 @@ class TaskStatusView(DeveloperErrorViewMixin, APIView):
 
         # Add progress if available
         if hasattr(task, 'task_output') and task.task_output:
-            import json
             try:
                 output = json.loads(task.task_output)
                 if 'current' in output and 'total' in output:
@@ -1415,6 +1437,5 @@ class TaskStatusView(DeveloperErrorViewMixin, APIView):
                 'message': str(task.task_output) if task.task_output else 'Task failed'
             }
 
-        from .serializers_v2 import TaskStatusSerializer
         serializer = TaskStatusSerializer(task_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
