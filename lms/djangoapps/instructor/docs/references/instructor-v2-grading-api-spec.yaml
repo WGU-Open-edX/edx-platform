@@ -83,6 +83,9 @@ paths:
         Retrieve problem metadata including display name, location in course hierarchy,
         and usage key.
 
+        When a `learner` query parameter is provided, the response also includes the
+        learner's current score and attempt count for the problem.
+
         **Note:** Requires exact problem location - no search or partial matching.
       operationId: getProblem
       produces:
@@ -95,6 +98,7 @@ paths:
           required: true
           type: string
           x-example: "block-v1:edX+DemoX+Demo_Course+type@problem+block@sample_problem"
+        - $ref: '#/parameters/EmailOrUsernameQuery'
       responses:
         200:
           description: Problem information retrieved successfully
@@ -378,6 +382,14 @@ parameters:
     type: string
     x-example: "john_harvard"
 
+  EmailOrUsernameQuery:
+    name: email_or_username
+    in: query
+    required: false
+    description: Learner's username or email address.
+    type: string
+    x-example: "john_harvard"
+
   ProblemLocationPath:
     name: problem
     in: path
@@ -571,28 +583,6 @@ definitions:
         format: uri
         description: URL to learner's gradebook view
         x-nullable: true
-      current_score:
-        type: object
-        x-nullable: true
-        properties:
-          score:
-            type: number
-            format: float
-            minimum: 0
-          total:
-            type: number
-            format: float
-            minimum: 0
-      attempts:
-        type: object
-        x-nullable: true
-        properties:
-          current:
-            type: integer
-            minimum: 0
-          total:
-            type: integer
-            minimum: 0
 
   Problem:
     type: object
@@ -623,6 +613,34 @@ definitions:
             usage_key:
               type: string
               description: Block usage key (omitted for course level)
+      current_score:
+        type: object
+        x-nullable: true
+        description: Learner's current score (present when learner query param is provided and has a submission)
+        properties:
+          score:
+            type: number
+            format: float
+            x-nullable: true
+            minimum: 0
+          total:
+            type: number
+            format: float
+            x-nullable: true
+            minimum: 0
+      attempts:
+        type: object
+        x-nullable: true
+        description: Learner's attempt data (present when learner query param is provided and has a submission)
+        properties:
+          current:
+            type: integer
+            minimum: 0
+          total:
+            type: integer
+            x-nullable: true
+            minimum: 0
+            description: Maximum attempts allowed (null if unlimited)
 
   Error:
     type: object

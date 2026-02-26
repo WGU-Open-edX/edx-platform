@@ -7,6 +7,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from common.djangoapps.student.tests.factories import InstructorFactory, UserFactory
+from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor_task.models import InstructorTask
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory
@@ -140,6 +141,68 @@ class ProblemViewTestCase(ModuleStoreTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('error', response.json())
+
+    def test_get_problem_without_learner_has_null_score_and_attempts(self):
+        """Test that current_score and attempts are null when no learner is specified"""
+        url = reverse('instructor_api_v2:problem_detail', kwargs={
+            'course_id': str(self.course.id),
+            'location': str(self.problem.location)
+        })
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIsNone(data['current_score'])
+        self.assertIsNone(data['attempts'])
+
+    def test_get_problem_with_learner_returns_score_and_attempts(self):
+        """Test that current_score and attempts are returned when learner has a StudentModule"""
+        student = UserFactory()
+        StudentModule.objects.create(
+            student=student,
+            course_id=self.course.id,
+            module_state_key=self.problem.location,
+            module_type='problem',
+            grade=7.0,
+            max_grade=10.0,
+            state=json.dumps({'attempts': 3}),
+        )
+
+        url = reverse('instructor_api_v2:problem_detail', kwargs={
+            'course_id': str(self.course.id),
+            'location': str(self.problem.location)
+        })
+        response = self.client.get(url, {'email_or_username': student.username})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data['current_score']['score'], 7.0)
+        self.assertEqual(data['current_score']['total'], 10.0)
+        self.assertEqual(data['attempts']['current'], 3)
+
+    def test_get_problem_with_learner_no_submission_has_null_score_and_attempts(self):
+        """Test that current_score and attempts are null when learner has no StudentModule"""
+        student = UserFactory()
+        url = reverse('instructor_api_v2:problem_detail', kwargs={
+            'course_id': str(self.course.id),
+            'location': str(self.problem.location)
+        })
+        response = self.client.get(url, {'email_or_username': student.username})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIsNone(data['current_score'])
+        self.assertIsNone(data['attempts'])
+
+    def test_get_problem_with_unknown_learner_returns_404(self):
+        """Test that a 404 is returned when learner does not exist"""
+        url = reverse('instructor_api_v2:problem_detail', kwargs={
+            'course_id': str(self.course.id),
+            'location': str(self.problem.location)
+        })
+        response = self.client.get(url, {'email_or_username': 'nonexistent_user'})
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_get_problem_requires_authentication(self):
         """Test that endpoint requires authentication"""

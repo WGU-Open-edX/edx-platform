@@ -614,16 +614,6 @@ class LearnerSerializer(serializers.Serializer):
         required=False,
         help_text="URL to learner's gradebook view"
     )
-    current_score = serializers.DictField(
-        allow_null=True,
-        required=False,
-        help_text="Current score information with 'score' and 'total' fields"
-    )
-    attempts = serializers.DictField(
-        allow_null=True,
-        required=False,
-        help_text="Attempts information with 'current' and 'total' fields"
-    )
 
 
 class ProblemSerializer(serializers.Serializer):
@@ -631,6 +621,8 @@ class ProblemSerializer(serializers.Serializer):
     Serializer for problem metadata and location.
 
     Provides problem information including display name and course hierarchy.
+    Optionally includes learner-specific score and attempt data when a learner
+    query parameter is provided.
     """
     id = serializers.CharField(
         help_text="Problem usage key"
@@ -641,6 +633,16 @@ class ProblemSerializer(serializers.Serializer):
     breadcrumbs = serializers.ListField(
         child=serializers.DictField(),
         help_text="Course hierarchy breadcrumbs showing problem location"
+    )
+    current_score = serializers.DictField(
+        allow_null=True,
+        required=False,
+        help_text="Learner's current score with 'score' and 'total' fields. Null if no learner specified."
+    )
+    attempts = serializers.DictField(
+        allow_null=True,
+        required=False,
+        help_text="Learner's attempt data with 'current' and 'total' (max) fields. Null if no learner specified."
     )
 
 
