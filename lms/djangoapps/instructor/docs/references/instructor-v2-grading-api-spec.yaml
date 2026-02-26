@@ -548,8 +548,7 @@ definitions:
     required:
       - username
       - email
-      - first_name
-      - last_name
+      - full_name
     properties:
       username:
         type: string
@@ -558,12 +557,10 @@ definitions:
         type: string
         format: email
         example: "john@example.com"
-      first_name:
+      full_name:
         type: string
-        example: "John"
-      last_name:
-        type: string
-        example: "Harvard"
+        description: Learner's full name from their Open edX profile
+        example: "John Harvard"
       progress_url:
         type: string
         format: uri

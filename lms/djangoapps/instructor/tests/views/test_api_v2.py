@@ -25,9 +25,9 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         self.student = UserFactory(
             username='john_harvard',
             email='john@example.com',
-            first_name='John',
-            last_name='Harvard'
         )
+        self.student.profile.name = 'John Harvard'
+        self.student.profile.save()
         self.client.force_authenticate(user=self.instructor)
 
     def test_get_learner_by_username(self):
@@ -42,8 +42,7 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         data = response.json()
         self.assertEqual(data['username'], 'john_harvard')
         self.assertEqual(data['email'], 'john@example.com')
-        self.assertEqual(data['first_name'], 'John')
-        self.assertEqual(data['last_name'], 'Harvard')
+        self.assertEqual(data['full_name'], 'John Harvard')
 
     def test_get_learner_by_email(self):
         """Test retrieving learner info by email"""

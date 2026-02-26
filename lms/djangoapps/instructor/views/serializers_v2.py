@@ -601,11 +601,8 @@ class LearnerSerializer(serializers.Serializer):
     email = serializers.EmailField(
         help_text="Learner's email address"
     )
-    first_name = serializers.CharField(
-        help_text="Learner's first name"
-    )
-    last_name = serializers.CharField(
-        help_text="Learner's last name"
+    full_name = serializers.CharField(
+        help_text="Learner's full name from their Open edX profile"
     )
     progress_url = serializers.URLField(
         allow_null=True,
