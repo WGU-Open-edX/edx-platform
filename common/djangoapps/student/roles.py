@@ -382,17 +382,18 @@ class RoleBase(AccessRole):
         Add the supplied django users to this role.
         AuthZ compatibility layer
         """
-        usernames = [user.username for user in users]
         role = get_authz_role_from_legacy_role(self.ROLE)
-        for username in usernames:
-            authz_change_role(
-                username=username,
-                authz_role=role,
-                course_key=str(self.course_key),
-            )
+        # silently ignores anonymous and inactive users so that any that are
+        # legit get updated.
         for user in users:
-            if hasattr(user, '_roles'):
-                del user._roles
+            if user.is_authenticated and user.is_active:
+                authz_change_role(
+                    username=user.username,
+                    authz_role=role,
+                    course_key=str(self.course_key),
+                )
+                if hasattr(user, '_roles'):
+                    del user._roles
 
     def _legacy_add_users(self, users):
         """
