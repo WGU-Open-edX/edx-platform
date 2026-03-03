@@ -497,21 +497,21 @@ class RoleBase(AccessRole):
         else:
             return self._legacy_users_with_role()
 
-    def _authz_get_orgs_for_user(self, user):
+    def _authz_get_orgs_for_user(self, user) -> list[str]:
         """
         Returns a list of org short names for the user with given role.
         AuthZ compatibility layer
         """
         # TODO: This will be implemented on Milestone 1
-        # of the Authz for Cours Authoring project
+        # of the Authz for Course Authoring project
         return []
 
-    def _legacy_get_orgs_for_user(self, user):
+    def _legacy_get_orgs_for_user(self, user) -> list[str]:
         """
         Returns a list of org short names for the user with given role.
         legacy implementation
         """
-        return CourseAccessRole.objects.filter(user=user, role=self._role_name).values_list('org', flat=True)
+        return list(CourseAccessRole.objects.filter(user=user, role=self._role_name).values_list('org', flat=True))
 
     def get_orgs_for_user(self, user):
         """
