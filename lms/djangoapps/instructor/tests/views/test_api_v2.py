@@ -39,11 +39,21 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         })
         response = self.client.get(url)
 
+        expected_progress_url = reverse('student_progress', kwargs={
+            'course_id': str(self.course.id),
+            'student_id': self.student.id,
+        })
+        expected_gradebook_url = reverse('instructor_dashboard', kwargs={
+            'course_id': str(self.course.id),
+        })
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertEqual(data['username'], 'john_harvard')
         self.assertEqual(data['email'], 'john@example.com')
         self.assertEqual(data['full_name'], 'John Harvard')
+        self.assertEqual(data['progress_url'], expected_progress_url)
+        self.assertEqual(data['gradebook_url'], expected_gradebook_url)
 
     def test_get_learner_by_email(self):
         """Test retrieving learner info by email"""
@@ -53,10 +63,20 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         })
         response = self.client.get(url)
 
+        expected_progress_url = reverse('student_progress', kwargs={
+            'course_id': str(self.course.id),
+            'student_id': self.student.id,
+        })
+        expected_gradebook_url = reverse('instructor_dashboard', kwargs={
+            'course_id': str(self.course.id),
+        })
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertEqual(data['username'], 'john_harvard')
         self.assertEqual(data['email'], 'john@example.com')
+        self.assertEqual(data['progress_url'], expected_progress_url)
+        self.assertEqual(data['gradebook_url'], expected_gradebook_url)
 
     def test_get_learner_requires_authentication(self):
         """Test that endpoint requires authentication"""
