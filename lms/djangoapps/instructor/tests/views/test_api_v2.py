@@ -180,8 +180,8 @@ class ProblemViewTestCase(ModuleStoreTestCase):
         self.assertEqual(data['current_score']['total'], 10.0)
         self.assertEqual(data['attempts']['current'], 3)
 
-    def test_get_problem_with_learner_no_submission_has_null_score_and_attempts(self):
-        """Test that current_score and attempts are null when learner has no StudentModule"""
+    def test_get_problem_with_learner_no_submission_returns_404(self):
+        """Test that 404 is returned when learner has no StudentModule for the problem"""
         student = UserFactory()
         url = reverse('instructor_api_v2:problem_detail', kwargs={
             'course_id': str(self.course.id),
@@ -189,10 +189,8 @@ class ProblemViewTestCase(ModuleStoreTestCase):
         })
         response = self.client.get(url, {'email_or_username': student.username})
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        self.assertIsNone(data['current_score'])
-        self.assertIsNone(data['attempts'])
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.json())
 
     def test_get_problem_with_unknown_learner_returns_404(self):
         """Test that a 404 is returned when learner does not exist"""
