@@ -1204,15 +1204,9 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
     {
         "username": "john_harvard",
         "email": "john@example.com",
-        "first_name": "John",
-        "last_name": "Harvard",
+        "full_name": "John Harvard",
         "progress_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/progress/john_harvard/",
-        "gradebook_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/instructor#view-gradebook",
-        "current_score": {
-            "score": 85.5,
-            "total": 100.0
-        },
-        "attempts": null
+        "gradebook_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/instructor#view-gradebook"
     }
     ```
     """
@@ -1314,7 +1308,15 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
                 "display_name": "Sample Problem",
                 "usage_key": "block-v1:edX+DemoX+Demo_Course+type@problem+block@sample_problem"
             }
-        ]
+        ],
+        "current_score": {
+            "score": 7.0,
+            "total": 10.0
+        },
+        "attempts": {
+            "current": 3,
+            "total": null
+        }
     }
     ```
     """
@@ -1382,12 +1384,11 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
                 'usage_key': str(current.location) if current.location != course_key else None
             })
             parent_location = current.get_parent() if hasattr(current, 'get_parent') else None
-            if parent_location:
-                try:
-                    current = store.get_item(parent_location)
-                except Exception:  # pylint: disable=broad-except
-                    break
-            else:
+            if not parent_location:
+                break
+            try:
+                current = store.get_item(parent_location)
+            except Exception:  # pylint: disable=broad-except
                 break
 
         problem_data = {
@@ -1430,7 +1431,10 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
                     'total': problem.max_attempts,
                 }
             except StudentModule.DoesNotExist:
-                pass
+                return Response(
+                    {'error': 'Learner has not attempted this problem'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
         serializer = ProblemSerializer(problem_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
