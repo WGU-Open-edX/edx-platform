@@ -42,9 +42,9 @@ def get_legacy_role_from_authz_role(authz_role: str) -> str:
     return next((k for k, v in authz_roles.LEGACY_COURSE_ROLE_EQUIVALENCES.items() if v == authz_role), None)
 
 
-def authz_change_role(user: User, authz_role: str, course_key: str):
+def authz_add_role(user: User, authz_role: str, course_key: str):
     """
-    Change a user's role in a course by removing existing roles and assigning a new one.
+    Add a user's role in a course if not already added.
     Args:
         user (User): The user whose role is being changed.
         authz_role (str): The new authorization role to assign (authz role, not legacy).
@@ -52,21 +52,17 @@ def authz_change_role(user: User, authz_role: str, course_key: str):
     """
     course_locator = CourseLocator.from_string(course_key)
 
-    # Remove any existing role assignment for this user in this course
-    existing_assignments = authz_api.get_user_role_assignments(user_external_key=user.username)
+    # Check if the user is not already assigned this role for this course
+    existing_assignments = authz_api.get_user_role_assignments_in_scope(
+        user_external_key=user.username,
+        scope_external_key=course_key
+    )
     existing_roles = [existing_role.external_key
                       for existing_assignment in existing_assignments
                       for existing_role in existing_assignment.roles]
-    for existing_authz_role in existing_roles:
-        legacy_role = get_legacy_role_from_authz_role(existing_authz_role)
-        # Only do it over roles that have legacy equivalences
-        if legacy_role:
-            authz_api.unassign_role_from_user(
-                user_external_key=user.username,
-                role_external_key=existing_authz_role,
-                scope_external_key=course_key
-            )
-            emit_course_access_role_removed(user, course_locator, course_locator.org, legacy_role)
+
+    if authz_role in existing_roles:
+        return
 
     # Assign new role
     authz_api.assign_role_to_user_in_scope(
@@ -400,7 +396,7 @@ class RoleBase(AccessRole):
         # legit get updated.
         for user in users:
             if user.is_authenticated and user.is_active:
-                authz_change_role(
+                authz_add_role(
                     user=user,
                     authz_role=role,
                     course_key=str(self.course_key),
@@ -761,7 +757,7 @@ class UserBasedRole:
             for course_key in course_keys:
                 if enable_authz_course_authoring(course_key):
                     # AuthZ compatibility layer
-                    authz_change_role(
+                    authz_add_role(
                         user=self.user,
                         authz_role=authz_role,
                         course_key=str(course_key),
