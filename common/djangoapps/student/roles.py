@@ -11,8 +11,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
+from common.djangoapps.student.signals.signals import emit_course_access_role_added, emit_course_access_role_removed
 from opaque_keys.edx.django.models import CourseKeyField
 from opaque_keys.edx.keys import CourseKey
+from opaque_keys.edx.locator import CourseLocator
 from openedx_authz.api import users as authz_api
 from openedx_authz.constants import roles as authz_roles
 
@@ -40,29 +42,40 @@ def get_legacy_role_from_authz_role(authz_role: str) -> str:
     return next((k for k, v in authz_roles.LEGACY_COURSE_ROLE_EQUIVALENCES.items() if v == authz_role), None)
 
 
-def authz_change_role(username: str, authz_role: str, course_key: str):
+def authz_change_role(user: User, authz_role: str, course_key: str):
     """
     Change a user's role in a course by removing existing roles and assigning a new one.
     Args:
-        username (str): The username of the user whose role is being changed.
+        user (User): The user whose role is being changed.
         authz_role (str): The new authorization role to assign (authz role, not legacy).
         course_key (str): The course key where the role change is taking effect.
     """
+    course_locator = CourseLocator.from_string(course_key)
+
     # Remove any existing role assignment for this user in this course
-    # Only do it over roles that have legacy equivalences
-    for role in authz_roles.LEGACY_COURSE_ROLE_EQUIVALENCES:
-        authz_api.unassign_role_from_user(
-            user_external_key=username,
-            role_external_key=authz_roles.LEGACY_COURSE_ROLE_EQUIVALENCES[role],
-            scope_external_key=course_key
-        )
+    existing_assignments = authz_api.get_user_role_assignments(user_external_key=user.username)
+    existing_roles = [existing_role.external_key
+                      for existing_assignment in existing_assignments
+                      for existing_role in existing_assignment.roles]
+    for existing_authz_role in existing_roles:
+        legacy_role = get_legacy_role_from_authz_role(existing_authz_role)
+        # Only do it over roles that have legacy equivalences
+        if legacy_role:
+            authz_api.unassign_role_from_user(
+                user_external_key=user.username,
+                role_external_key=existing_authz_role,
+                scope_external_key=course_key
+            )
+            emit_course_access_role_removed(user, course_locator, course_locator.org, legacy_role)
 
     # Assign new role
     authz_api.assign_role_to_user_in_scope(
-        user_external_key=username,
+        user_external_key=user.username,
         role_external_key=authz_role,
         scope_external_key=course_key
     )
+    legacy_role = get_legacy_role_from_authz_role(authz_role)
+    emit_course_access_role_added(user, course_locator, course_locator.org, legacy_role)
 
 
 def register_access_role(cls):
@@ -388,7 +401,7 @@ class RoleBase(AccessRole):
         for user in users:
             if user.is_authenticated and user.is_active:
                 authz_change_role(
-                    username=user.username,
+                    user=user,
                     authz_role=role,
                     course_key=str(self.course_key),
                 )
@@ -428,12 +441,15 @@ class RoleBase(AccessRole):
         """
         usernames = [user.username for user in users]
         role = get_authz_role_from_legacy_role(self.ROLE)
+        course_key_str = str(self.course_key)
+        course_locator = CourseLocator.from_string(course_key_str)
         authz_api.batch_unassign_role_from_users(
             users=usernames,
             role_external_key=role,
-            scope_external_key=str(self.course_key)
+            scope_external_key=course_key_str
         )
         for user in users:
+            emit_course_access_role_removed(user, course_locator, course_locator.org, self.ROLE)
             if hasattr(user, '_roles'):
                 del user._roles
 
@@ -746,7 +762,7 @@ class UserBasedRole:
                 if enable_authz_course_authoring(course_key):
                     # AuthZ compatibility layer
                     authz_change_role(
-                        username=self.user.username,
+                        user=self.user,
                         authz_role=authz_role,
                         course_key=str(course_key),
                     )
@@ -768,11 +784,15 @@ class UserBasedRole:
         # Execute bulk delete on AuthZ
         role = get_authz_role_from_legacy_role(self.role)
         for course_key in course_keys:
-            authz_api.unassign_role_from_user(
+            course_key_str = str(course_key)
+            success = authz_api.unassign_role_from_user(
                 user_external_key=self.user.username,
                 role_external_key=role,
-                scope_external_key=str(course_key)
+                scope_external_key=course_key_str
             )
+            if success:
+                course_locator = CourseLocator.from_string(course_key_str)
+                emit_course_access_role_removed(self.user, course_locator, course_locator.org, self.role)
 
         if hasattr(self.user, '_roles'):
             del self.user._roles
