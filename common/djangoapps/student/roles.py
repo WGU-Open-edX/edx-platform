@@ -541,7 +541,7 @@ class RoleBase(AccessRole):
         Arguments:
             user: user to check against access to role
             org: optional org to check against access to role,
-                if not secified, will return True if there is the user has access to at least one org
+                if not specified, will return True if the user has access to at least one org
         """
         if enable_authz_course_authoring(self.course_key):
             orgs_with_role = self.get_orgs_for_user(user)
