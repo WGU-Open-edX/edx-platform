@@ -866,8 +866,33 @@ class UserBasedRole:
         Arguments:
             org (str): Optional org to filter by
         """
-        all_courses_with_admin_role = self.courses_with_role()
-        courses_with_admin_role_on_org = all_courses_with_admin_role
-        if org is not None:
-            courses_with_admin_role_on_org = [course for course in all_courses_with_admin_role if course.org == org]
-        return len(courses_with_admin_role_on_org) > 0
+        roles = RoleCache.get_roles(self.role)
+        # First check if we have any legacy assignment with an optimized ORM query
+        filter_params = {
+            'user': self.user,
+            'role__in': roles
+        }
+        if org:
+            filter_params['org'] = org
+        has_legacy_assignments = CourseAccessRole.objects.filter(**filter_params).exists()
+        if has_legacy_assignments:
+            return True
+
+        # Then check for authz assignments
+        new_authz_roles = [get_authz_role_from_legacy_role(role) for role in roles]
+        all_authz_user_assignments = authz_api.get_user_role_assignments(
+            user_external_key=self.user.username
+        )
+
+        for assignment in all_authz_user_assignments:
+            for role in assignment.roles:
+                if role.external_key not in new_authz_roles:
+                    continue
+                if org is None:
+                    # There is at least one assignment, short circuit
+                    return True
+                course_key = assignment.scope.external_key
+                parsed_key = CourseKey.from_string(course_key)
+                if org == parsed_key.org:
+                    return True
+        return False
