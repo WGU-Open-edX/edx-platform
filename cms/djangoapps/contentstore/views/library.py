@@ -77,26 +77,15 @@ def _user_can_create_library_for_org(user, org=None):
         if is_course_creator:
             return True
 
-        orgs_with_staff_role = OrgStaffRole().get_orgs_for_user(user)
-        if org is not None:
-            orgs_with_staff_role = [user_org for user_org in orgs_with_staff_role if user_org == org]
-        has_org_staff_role = len(orgs_with_staff_role) > 0
+        has_org_staff_role = OrgStaffRole().has_org_for_user(user, org)
         if has_org_staff_role:
             return True
 
-        all_courses_with_staff_role = UserBasedRole(user=user, role=CourseStaffRole.ROLE).courses_with_role()
-        courses_with_staff_role_on_org = all_courses_with_staff_role
-        if org is not None:
-            courses_with_staff_role_on_org = [course for course in all_courses_with_staff_role if course.org == org]
-        has_course_staff_role = len(courses_with_staff_role_on_org) > 0
+        has_course_staff_role = UserBasedRole(user=user, role=CourseStaffRole.ROLE).has_courses_with_role(org)
         if has_course_staff_role:
             return True
 
-        all_courses_with_admin_role = UserBasedRole(user=user, role=CourseInstructorRole.ROLE).courses_with_role()
-        courses_with_admin_role_on_org = all_courses_with_admin_role
-        if org is not None:
-            courses_with_admin_role_on_org = [course for course in all_courses_with_admin_role if course.org == org]
-        has_course_admin_role = len(courses_with_admin_role_on_org) > 0
+        has_course_admin_role = UserBasedRole(user=user, role=CourseInstructorRole.ROLE).has_courses_with_role(org)
         if has_course_admin_role:
             return True
 

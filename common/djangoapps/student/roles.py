@@ -534,6 +534,29 @@ class RoleBase(AccessRole):
         else:
             return self._legacy_get_orgs_for_user(user)
 
+    def has_org_for_user(self, user: User, org: str | None = None) -> bool:
+        """
+        Checks whether a user has a specific role within an org.
+
+        Arguments:
+            user: user to check against access to role
+            org: optional org to check against access to role,
+                if not secified, will return True if there is the user has access to at least one org
+        """
+        if enable_authz_course_authoring(self.course_key):
+            orgs_with_role = self.get_orgs_for_user(user)
+            if org:
+                return org in orgs_with_role
+            return len(orgs_with_role) > 0
+        else:
+            # Use ORM query directly for performance
+            filter_params = {
+                'user': user,
+                'role': self._role_name
+            }
+            if org:
+                filter_params['org'] = org
+            return CourseAccessRole.objects.filter(**filter_params).exists()
 
 class CourseRole(RoleBase):
     """
@@ -835,3 +858,17 @@ class UserBasedRole:
                 ))
 
         return all_assignments
+
+    def has_courses_with_role(self, org: str | None = None) -> bool:
+        """
+        Return whether this user has any courses with this role and optional org (or derived roles)
+
+        Arguments:
+            org (str): Optional org to filter by
+        """
+        all_courses_with_admin_role = self.courses_with_role()
+        courses_with_admin_role_on_org = all_courses_with_admin_role
+        if org is not None:
+            courses_with_admin_role_on_org = [course for course in all_courses_with_admin_role if course.org == org]
+        return len(courses_with_admin_role_on_org) > 0
+
