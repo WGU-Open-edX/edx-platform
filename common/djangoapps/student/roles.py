@@ -871,4 +871,3 @@ class UserBasedRole:
         if org is not None:
             courses_with_admin_role_on_org = [course for course in all_courses_with_admin_role if course.org == org]
         return len(courses_with_admin_role_on_org) > 0
-
