@@ -17,8 +17,8 @@ from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import CourseLocator, LibraryLocatorV2
 from openedx_authz.api import users as authz_api
+from openedx_authz.api.data import RoleAssignmentData
 from openedx_authz.constants import roles as authz_roles
-from openedx_authz.models import RoleAssignmentData
 
 from common.djangoapps.student.models import CourseAccessRole
 from openedx.core.lib.cache_utils import get_cache
