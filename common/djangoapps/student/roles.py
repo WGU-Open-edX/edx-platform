@@ -13,8 +13,9 @@ from dataclasses import dataclass
 from django.contrib.auth.models import User  # lint-amnesty, pylint: disable=imported-auth-user
 from common.djangoapps.student.signals.signals import emit_course_access_role_added, emit_course_access_role_removed
 from opaque_keys.edx.django.models import CourseKeyField
+from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
-from opaque_keys.edx.locator import CourseLocator
+from opaque_keys.edx.locator import CourseLocator, LibraryLocatorV2
 from openedx_authz.api import users as authz_api
 from openedx_authz.constants import roles as authz_roles
 
@@ -73,6 +74,15 @@ def authz_add_role(user: User, authz_role: str, course_key: str):
     legacy_role = get_legacy_role_from_authz_role(authz_role)
     emit_course_access_role_added(user, course_locator, course_locator.org, legacy_role)
 
+def get_org_from_key(key: str) -> str:
+    """
+    Get the org from a course or library key.
+    """
+    try:
+        parsed_key = CourseKey.from_string(key)
+    except InvalidKeyError:
+        parsed_key = LibraryLocatorV2.from_string(key)
+    return parsed_key.org
 
 def register_access_role(cls):
     """
@@ -141,8 +151,7 @@ def get_authz_compat_course_access_roles_for_user(user: User) -> set[AuthzCompat
         for role in assignment.roles:
             legacy_role = get_legacy_role_from_authz_role(authz_role=role.external_key)
             course_key = assignment.scope.external_key
-            parsed_key = CourseKey.from_string(course_key)
-            org = parsed_key.org
+            org = get_org_from_key(course_key)
             compat_role = AuthzCompatCourseAccessRole(
                 user_id=user.id,
                 username=user.username,
@@ -847,8 +856,7 @@ class UserBasedRole:
                     continue
                 legacy_role = get_legacy_role_from_authz_role(authz_role=role.external_key)
                 course_key = assignment.scope.external_key
-                parsed_key = CourseKey.from_string(course_key)
-                org = parsed_key.org
+                org = get_org_from_key(course_key)
                 all_assignments.add(AuthzCompatCourseAccessRole(
                     user_id=self.user.id,
                     username=self.user.username,
@@ -892,7 +900,7 @@ class UserBasedRole:
                     # There is at least one assignment, short circuit
                     return True
                 course_key = assignment.scope.external_key
-                parsed_key = CourseKey.from_string(course_key)
-                if org == parsed_key.org:
+                parsed_org = get_org_from_key(course_key)
+                if org == parsed_org:
                     return True
         return False
