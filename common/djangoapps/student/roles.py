@@ -18,6 +18,7 @@ from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import CourseLocator, LibraryLocatorV2
 from openedx_authz.api import users as authz_api
 from openedx_authz.constants import roles as authz_roles
+from openedx_authz.models import RoleAssignmentData
 
 from common.djangoapps.student.models import CourseAccessRole
 from openedx.core.lib.cache_utils import get_cache
@@ -73,6 +74,15 @@ def authz_add_role(user: User, authz_role: str, course_key: str):
     )
     legacy_role = get_legacy_role_from_authz_role(authz_role)
     emit_course_access_role_added(user, course_locator, course_locator.org, legacy_role)
+
+def authz_get_all_course_assignments_for_user(user: User) -> list[RoleAssignmentData]:
+    """
+    Get all course assignments for a user.
+    """
+    assignments = authz_api.get_user_role_assignments(user_external_key=user.username)
+    # filter courses only
+    filtered_assignments = [assignment for assignment in assignments if assignment.scope.NAMESPACE == 'course-v1']
+    return filtered_assignments
 
 def get_org_from_key(key: str) -> str:
     """
@@ -146,7 +156,7 @@ def get_authz_compat_course_access_roles_for_user(user: User) -> set[AuthzCompat
     Retrieve all CourseAccessRole objects for a given user and convert them to AuthzCompatCourseAccessRole objects.
     """
     compat_role_assignments = set()
-    assignments = authz_api.get_user_role_assignments(user_external_key=user.username)
+    assignments = authz_get_all_course_assignments_for_user(user)
     for assignment in assignments:
         for role in assignment.roles:
             legacy_role = get_legacy_role_from_authz_role(authz_role=role.external_key)
@@ -834,9 +844,7 @@ class UserBasedRole:
 
         # Get all assignments for a user to a role
         new_authz_roles = [get_authz_role_from_legacy_role(role) for role in roles]
-        all_authz_user_assignments = authz_api.get_user_role_assignments(
-            user_external_key=self.user.username
-        )
+        all_authz_user_assignments = authz_get_all_course_assignments_for_user(self.user)
 
         all_assignments = set()
 
@@ -888,9 +896,7 @@ class UserBasedRole:
 
         # Then check for authz assignments
         new_authz_roles = [get_authz_role_from_legacy_role(role) for role in roles]
-        all_authz_user_assignments = authz_api.get_user_role_assignments(
-            user_external_key=self.user.username
-        )
+        all_authz_user_assignments = authz_get_all_course_assignments_for_user(self.user)
 
         for assignment in all_authz_user_assignments:
             for role in assignment.roles:
