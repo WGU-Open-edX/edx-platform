@@ -86,6 +86,11 @@ v2_api_urls = [
         api_v2.TaskStatusView.as_view(),
         name='task_status'
     ),
+    re_path(
+        rf'^courses/{COURSE_ID_PATTERN}/grading-config$',
+        api_v2.GradingConfigView.as_view(),
+        name='grading_config'
+    ),
 ]
 
 urlpatterns = [

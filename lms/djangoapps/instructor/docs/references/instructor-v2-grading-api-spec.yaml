@@ -32,6 +32,8 @@ security:
   - JWTAuth: []
 
 tags:
+  - name: Course
+    description: Course-level configuration and metadata
   - name: Learners
     description: Learner information and enrollment data
   - name: Problems
@@ -112,6 +114,33 @@ paths:
           $ref: '#/responses/Forbidden'
         404:
           $ref: '#/responses/NotFound'
+
+  # ==================== COURSE CONFIG ENDPOINTS ====================
+
+  /api/instructor/v2/courses/{course_key}/grading-config:
+    get:
+      tags:
+        - Course
+      summary: Get course grading configuration
+      description: |
+        Retrieve the grading policy for a course, including assignment type weights
+        and letter grade cutoff thresholds.
+      operationId: getGradingConfig
+      produces:
+        - application/json
+      parameters:
+        - $ref: '#/parameters/CourseKey'
+      responses:
+        200:
+          description: Grading configuration retrieved successfully
+          schema:
+            $ref: '#/definitions/GradingConfig'
+        400:
+          $ref: '#/responses/BadRequest'
+        401:
+          $ref: '#/responses/Unauthorized'
+        403:
+          $ref: '#/responses/Forbidden'
 
   # ==================== GRADING ENDPOINTS ====================
 
@@ -578,11 +607,55 @@ definitions:
         format: uri
         description: URL to learner's progress page
         x-nullable: true
-      gradebook_url:
-        type: string
-        format: uri
-        description: URL to learner's gradebook view
-        x-nullable: true
+
+  GradingConfig:
+    type: object
+    description: Course grading policy configuration
+    required:
+      - graders
+      - grade_cutoffs
+    properties:
+      graders:
+        type: array
+        description: List of grader configurations by assignment type
+        items:
+          type: object
+          required:
+            - type
+            - min_count
+            - drop_count
+            - weight
+          properties:
+            type:
+              type: string
+              description: Assignment type name
+              example: "Homework"
+            short_label:
+              type: string
+              x-nullable: true
+              description: Short label used when displaying assignment names
+              example: "HW"
+            min_count:
+              type: integer
+              minimum: 0
+              description: Minimum number of assignments counted in this category
+            drop_count:
+              type: integer
+              minimum: 0
+              description: Number of lowest scores dropped from this category
+            weight:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+              description: Weight of this assignment type in the final grade (0.0 to 1.0)
+      grade_cutoffs:
+        type: object
+        description: Grade cutoffs mapping letter grades to minimum score thresholds (0.0 to 1.0)
+        example:
+          A: 0.9
+          B: 0.8
+          C: 0.7
 
   Problem:
     type: object
@@ -636,11 +709,14 @@ definitions:
           current:
             type: integer
             minimum: 0
+            description: Number of times the learner has attempted this problem
           total:
             type: integer
             x-nullable: true
             minimum: 0
-            description: Maximum attempts allowed (null if unlimited)
+            description: >
+              Maximum number of attempts allowed for this problem.
+              A null value means the problem allows unlimited attempts.
 
   Error:
     type: object
