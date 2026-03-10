@@ -67,6 +67,12 @@ class CourseInformationSerializerV2(serializers.Serializer):
     grade_cutoffs = serializers.SerializerMethodField(help_text="Formatted string of grade cutoffs")
     course_errors = serializers.SerializerMethodField(help_text="List of course validation errors from modulestore")
     studio_url = serializers.SerializerMethodField(help_text="URL to view/edit course in Studio")
+    gradebook_url = serializers.SerializerMethodField(
+        help_text="URL to the MFE gradebook for the course (null if not configured)"
+    )
+    studio_grading_url = serializers.SerializerMethodField(
+        help_text="URL to the Studio grading settings page for the course (null if not configured)"
+    )
     permissions = serializers.SerializerMethodField(help_text="User permissions for instructor dashboard features")
     tabs = serializers.SerializerMethodField(help_text="List of course tabs with configuration and display information")
     disable_buttons = serializers.SerializerMethodField(
@@ -359,6 +365,21 @@ class CourseInformationSerializerV2(serializers.Serializer):
         """Get Studio URL for the course."""
         return get_studio_url(data['course'], 'course')
 
+    def get_gradebook_url(self, data):
+        """Get MFE gradebook URL for the course."""
+        course_key = data['course'].id
+        if settings.WRITABLE_GRADEBOOK_URL:
+            return f'{settings.WRITABLE_GRADEBOOK_URL}/gradebook/{course_key}'
+        return None
+
+    def get_studio_grading_url(self, data):
+        """Get Studio MFE grading settings URL for the course."""
+        course_key = data['course'].id
+        mfe_base_url = getattr(settings, 'COURSE_AUTHORING_MICROFRONTEND_URL', None)
+        if mfe_base_url:
+            return f'{mfe_base_url}/course/{course_key}/settings/grading'
+        return None
+
     def get_disable_buttons(self, data):
         """Check if buttons should be disabled for large courses."""
         return not CourseEnrollment.objects.is_small_course(data['course'].id)
@@ -510,10 +531,43 @@ class LearnerSerializer(serializers.Serializer):
         required=False,
         help_text="URL to learner's progress page"
     )
-    gradebook_url = serializers.URLField(
-        allow_null=True,
+
+
+class GraderSerializer(serializers.Serializer):
+    """Serializer for a single grader configuration entry."""
+    type = serializers.CharField(
+        help_text="Assignment type (e.g. Homework, Lab, Midterm Exam)"
+    )
+    short_label = serializers.CharField(
         required=False,
-        help_text="URL to learner's gradebook view"
+        allow_null=True,
+        help_text="Short label used when displaying assignment names"
+    )
+    min_count = serializers.IntegerField(
+        help_text="Minimum number of assignments counted in this category"
+    )
+    drop_count = serializers.IntegerField(
+        help_text="Number of lowest scores dropped from this category"
+    )
+    weight = serializers.FloatField(
+        help_text="Weight of this assignment type in the final grade (0.0 to 1.0)"
+    )
+
+
+class GradingConfigSerializer(serializers.Serializer):
+    """
+    Serializer for course grading configuration.
+
+    Returns structured grading policy data including assignment type weights
+    and grade cutoff thresholds.
+    """
+    graders = GraderSerializer(
+        many=True,
+        help_text="List of grader configurations by assignment type"
+    )
+    grade_cutoffs = serializers.DictField(
+        child=serializers.FloatField(),
+        help_text="Grade cutoffs mapping letter grades to minimum score thresholds (0.0 to 1.0)"
     )
 
 

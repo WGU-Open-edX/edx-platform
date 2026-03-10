@@ -63,6 +63,7 @@ from .serializers_v2 import (
     InstructorTaskListSerializer,
     CourseInformationSerializerV2,
     BlockDueDateSerializerV2,
+    GradingConfigSerializer,
     LearnerSerializer,
     ProblemSerializer,
     TaskStatusSerializer,
@@ -1119,8 +1120,7 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
         "username": "john_harvard",
         "email": "john@example.com",
         "full_name": "John Harvard",
-        "progress_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/progress/john_harvard/",
-        "gradebook_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/instructor#view-gradebook"
+        "progress_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/progress/john_harvard/"
     }
     ```
     """
@@ -1185,14 +1185,11 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
                 kwargs={'course_id': str(course_key), 'student_id': student.id}
             )
 
-        gradebook_url = reverse('instructor_dashboard', kwargs={'course_id': str(course_key)})
-
         learner_data = {
             'username': student.username,
             'email': student.email,
             'full_name': student.profile.name,
             'progress_url': progress_url,
-            'gradebook_url': gradebook_url,
         }
 
         serializer = LearnerSerializer(learner_data)
@@ -1462,4 +1459,77 @@ class TaskStatusView(DeveloperErrorViewMixin, APIView):
             }
 
         serializer = TaskStatusSerializer(task_data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class GradingConfigView(DeveloperErrorViewMixin, APIView):
+    """
+    API view for retrieving course grading configuration.
+
+    **GET Example Response:**
+    ```json
+    {
+        "graders": [
+            {
+                "type": "Homework",
+                "short_label": "HW",
+                "min_count": 12,
+                "drop_count": 2,
+                "weight": 0.15
+            },
+            {
+                "type": "Final Exam",
+                "short_label": "Final",
+                "min_count": 1,
+                "drop_count": 0,
+                "weight": 0.40
+            }
+        ],
+        "grade_cutoffs": {
+            "A": 0.9,
+            "B": 0.8,
+            "C": 0.7
+        }
+    }
+    ```
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.VIEW_DASHBOARD
+
+    @apidocs.schema(
+        parameters=[
+            apidocs.string_parameter(
+                'course_id',
+                apidocs.ParameterLocation.PATH,
+                description="Course key for the course.",
+            ),
+        ],
+        responses={
+            200: 'Grading configuration retrieved successfully',
+            400: "Invalid parameters provided.",
+            401: "The requesting user is not authenticated.",
+            403: "The requesting user lacks instructor access to the course.",
+            404: "Course does not exist.",
+        },
+    )
+    def get(self, request, course_id):
+        """
+        Retrieve the grading configuration for a course, including assignment type
+        weights and grade cutoff thresholds.
+        """
+        try:
+            course_key = CourseKey.from_string(course_id)
+        except InvalidKeyError:
+            return Response(
+                {'error': 'Invalid course key'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        course = get_course_by_id(course_key)
+        grading_policy = course.grading_policy
+        config_data = {
+            'graders': grading_policy.get('GRADER', []),
+            'grade_cutoffs': grading_policy.get('GRADE_CUTOFFS', {}),
+        }
+        serializer = GradingConfigSerializer(config_data)
         return Response(serializer.data, status=status.HTTP_200_OK)

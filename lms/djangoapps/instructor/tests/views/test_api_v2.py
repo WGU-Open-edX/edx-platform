@@ -43,9 +43,6 @@ class LearnerViewTestCase(ModuleStoreTestCase):
             'course_id': str(self.course.id),
             'student_id': self.student.id,
         })
-        expected_gradebook_url = reverse('instructor_dashboard', kwargs={
-            'course_id': str(self.course.id),
-        })
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
@@ -53,7 +50,6 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         self.assertEqual(data['email'], 'john@example.com')
         self.assertEqual(data['full_name'], 'John Harvard')
         self.assertEqual(data['progress_url'], expected_progress_url)
-        self.assertEqual(data['gradebook_url'], expected_gradebook_url)
 
     def test_get_learner_by_email(self):
         """Test retrieving learner info by email"""
@@ -67,16 +63,12 @@ class LearnerViewTestCase(ModuleStoreTestCase):
             'course_id': str(self.course.id),
             'student_id': self.student.id,
         })
-        expected_gradebook_url = reverse('instructor_dashboard', kwargs={
-            'course_id': str(self.course.id),
-        })
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertEqual(data['username'], 'john_harvard')
         self.assertEqual(data['email'], 'john@example.com')
         self.assertEqual(data['progress_url'], expected_progress_url)
-        self.assertEqual(data['gradebook_url'], expected_gradebook_url)
 
     def test_get_learner_requires_authentication(self):
         """Test that endpoint requires authentication"""
@@ -347,6 +339,59 @@ class TaskStatusViewTestCase(ModuleStoreTestCase):
         url = reverse('instructor_api_v2:task_status', kwargs={
             'course_id': str(self.course.id),
             'task_id': 'some-task-id'
+        })
+        response = self.client.get(url)
+
+        self.assertIn(response.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
+
+
+class GradingConfigViewTestCase(ModuleStoreTestCase):
+    """
+    Tests for GET /api/instructor/v2/courses/{course_key}/grading-config
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.course = CourseFactory.create()
+        self.instructor = InstructorFactory.create(course_key=self.course.id)
+        self.client.force_authenticate(user=self.instructor)
+
+    def test_get_grading_config(self):
+        """Test retrieving grading configuration returns graders and grade cutoffs"""
+        url = reverse('instructor_api_v2:grading_config', kwargs={
+            'course_id': str(self.course.id),
+        })
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn('graders', data)
+        self.assertIn('grade_cutoffs', data)
+        self.assertIsInstance(data['graders'], list)
+        self.assertIsInstance(data['grade_cutoffs'], dict)
+
+    def test_get_grading_config_grader_fields(self):
+        """Test that each grader entry has the expected fields"""
+        url = reverse('instructor_api_v2:grading_config', kwargs={
+            'course_id': str(self.course.id),
+        })
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        for grader in data['graders']:
+            self.assertIn('type', grader)
+            self.assertIn('min_count', grader)
+            self.assertIn('drop_count', grader)
+            self.assertIn('weight', grader)
+
+    def test_get_grading_config_requires_authentication(self):
+        """Test that endpoint requires authentication"""
+        self.client.force_authenticate(user=None)
+
+        url = reverse('instructor_api_v2:grading_config', kwargs={
+            'course_id': str(self.course.id),
         })
         response = self.client.get(url)
 
