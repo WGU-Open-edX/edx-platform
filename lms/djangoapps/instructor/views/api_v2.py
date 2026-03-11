@@ -1353,7 +1353,6 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-
         serializer = ProblemSerializer(problem_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1540,7 +1539,6 @@ class GradingConfigView(DeveloperErrorViewMixin, APIView):
         }
         serializer = GradingConfigSerializer(config_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 
 def _parse_course_and_problem(course_id, problem):
