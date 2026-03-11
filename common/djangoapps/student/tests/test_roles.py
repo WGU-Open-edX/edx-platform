@@ -12,6 +12,7 @@ from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import LibraryLocator
 
 from openedx.core.djangoapps.content.course_overviews.tests.factories import CourseOverviewFactory
+from openedx_authz.api.data import ContentLibraryData, RoleAssignmentData, RoleData, UserData
 from openedx_authz.engine.enforcer import AuthzEnforcer
 
 from common.djangoapps.student.admin import CourseAccessRoleHistoryAdmin
@@ -33,6 +34,7 @@ from common.djangoapps.student.roles import (
     OrgInstructorRole,
     OrgStaffRole,
     RoleCache,
+    get_authz_compat_course_access_roles_for_user,
     get_role_cache_key_for_course,
     ROLE_CACHE_UNGROUPED_ROLES__KEY
 )
@@ -242,9 +244,6 @@ class RolesTestCase(TestCase):
         Thest that get_authz_compat_course_access_roles_for_user doesn't crash when the user
         has Libraries V2 or other non-course roles in their assignments.
         """
-        from openedx_authz.api.data import ContentLibraryData, RoleAssignmentData, RoleData, UserData
-        from common.djangoapps.student.roles import get_authz_compat_course_access_roles_for_user
-
         lib_assignment = RoleAssignmentData(
             subject=UserData(external_key=self.student.username),
             roles=[RoleData(external_key='test-role')],
