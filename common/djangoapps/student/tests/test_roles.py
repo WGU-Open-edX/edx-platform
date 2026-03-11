@@ -4,6 +4,7 @@ Tests of student.roles
 
 
 import ddt
+from unittest.mock import patch
 from django.contrib.auth.models import Permission
 from django.test import TestCase
 from edx_toggles.toggles.testutils import override_waffle_flag
@@ -235,6 +236,26 @@ class RolesTestCase(TestCase):
         role_second_org = OrgContentCreatorRole(org=self.orgs[1])
         role_second_org.add_users(self.student)
         assert len(role.get_orgs_for_user(self.student)) == 2
+
+    def test_get_authz_compat_course_access_roles_for_user(self):
+        """
+        Thest that get_authz_compat_course_access_roles_for_user doesn't crash when the user
+        has Libraries V2 or other non-course roles in their assignments.
+        """
+        from openedx_authz.api.data import ContentLibraryData, RoleAssignmentData, RoleData, UserData
+        from common.djangoapps.student.roles import get_authz_compat_course_access_roles_for_user
+
+        lib_assignment = RoleAssignmentData(
+            subject=UserData(external_key=self.student.username),
+            roles=[RoleData(external_key='test-role')],
+            scope=ContentLibraryData(external_key='lib:edX:test-lib'),
+        )
+        with patch(
+            'openedx_authz.api.users.get_subject_role_assignments',
+            return_value=[lib_assignment],
+        ):
+            result = get_authz_compat_course_access_roles_for_user(self.student)
+        assert result == set()
 
 
 @ddt.ddt

@@ -88,7 +88,7 @@ def authz_get_all_course_assignments_for_user(user: User) -> list[RoleAssignment
 
 def get_org_from_key(key: str) -> str:
     """
-    Get the org from a course or library key.
+    Get the org from a course key.
     """
     parsed_key = CourseKey.from_string(key)
     return parsed_key.org
