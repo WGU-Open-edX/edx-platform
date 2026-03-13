@@ -476,3 +476,57 @@ class ORASummarySerializer(serializers.Serializer):
     waiting = serializers.IntegerField()
     staff = serializers.IntegerField()
     final_grade_received = serializers.IntegerField()
+
+
+class IssuedCertificateSerializer(serializers.Serializer):
+    """
+    Serializer for issued certificates with allowlist and invalidation information.
+    """
+    username = serializers.CharField(help_text="Username of the learner")
+    email = serializers.EmailField(help_text="Email address of the learner")
+    enrollment_track = serializers.CharField(help_text="Enrollment track/mode (e.g., verified, audit)")
+    certificate_status = serializers.CharField(help_text="Certificate status (e.g., downloadable, notpassing)")
+    special_case = serializers.CharField(
+        allow_null=True,
+        help_text="Special case type (Exception or Invalidation)"
+    )
+    exception_granted = serializers.CharField(
+        allow_null=True,
+        help_text="Date when exception was granted"
+    )
+    exception_notes = serializers.CharField(
+        allow_null=True,
+        help_text="Notes about the exception"
+    )
+    invalidated_by = serializers.CharField(
+        allow_null=True,
+        help_text="Email of user who invalidated the certificate"
+    )
+    invalidation_date = serializers.CharField(
+        allow_null=True,
+        help_text="Date when certificate was invalidated"
+    )
+
+
+class CertificateGenerationHistorySerializer(serializers.Serializer):
+    """
+    Serializer for certificate generation history.
+    """
+    task_name = serializers.CharField(help_text="Task name (Generated or Regenerated)")
+    date = serializers.CharField(help_text="Date when the task was created (formatted)")
+    details = serializers.CharField(help_text="Details about the certificate generation (e.g., 'audit not passing states', 'For exceptions')")
+
+
+class RegenerateCertificatesSerializer(serializers.Serializer):
+    """
+    Serializer for regenerating certificates request.
+    """
+    statuses = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        help_text="Certificate statuses to regenerate"
+    )
+    student_set = serializers.CharField(
+        required=False,
+        help_text="Student set filter (e.g., 'all', 'allowlisted')"
+    )

@@ -403,6 +403,9 @@ CATALOG_MICROFRONTEND_URL = 'http://localhost:1998/catalog'
 ################### FRONTEND APPLICATION DISCUSSIONS ###################
 DISCUSSIONS_MICROFRONTEND_URL = 'http://localhost:2002'
 
+################### FRONTEND APPLICATION INSTRUCTOR ###################
+INSTRUCTOR_MICROFRONTEND_URL = 'http://apps.local.openedx.io:2003'
+
 ################### FRONTEND APPLICATION DISCUSSIONS FEEDBACK URL###################
 DISCUSSIONS_MFE_FEEDBACK_URL = None
 
