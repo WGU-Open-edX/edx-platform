@@ -256,6 +256,15 @@ IN_CONTEXT_DISCUSSION_ENABLED_DEFAULT = True
 # .. toggle_tickets: 'https://openedx.atlassian.net/browse/VAN-622'
 ENABLE_COPPA_COMPLIANCE = False
 
+# .. toggle_name: ENABLE_DATES_COURSE_APP
+# .. toggle_implementation: DjangoSetting
+# .. toggle_default: False
+# .. toggle_description: Controls whether the Dates course app is surfaced via the course apps API/UI.
+# .. toggle_use_cases: open_edx
+# .. toggle_creation_date: 2026-02-02
+# .. toggle_tickets: https://github.com/openedx/platform-roadmap/issues/392
+ENABLE_DATES_COURSE_APP = False
+
 ENABLE_JASMINE = False
 
 MARKETING_EMAILS_OPT_IN = False
@@ -280,7 +289,6 @@ HOTJAR_ID = 00000
 
 MAKO_TEMPLATE_DIRS_BASE.insert(3, COMMON_ROOT / 'static')
 MAKO_TEMPLATE_DIRS_BASE.append(CMS_ROOT / 'djangoapps' / 'pipeline_js' / 'templates')
-MAKO_TEMPLATE_DIRS_BASE.append(XMODULE_ROOT / 'capa' / 'templates')
 
 
 def make_lms_template_path(settings):
@@ -897,6 +905,9 @@ INSTALLED_APPS = [
     'drf_spectacular',
 
     'openedx_events',
+
+    # Core models to represent courses
+    "openedx_catalog",
 
     # Core apps that power libraries
     "openedx_content",
