@@ -34,13 +34,6 @@ from rest_framework.views import APIView
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
 
-from rest_framework.generics import GenericAPIView
-from rest_framework.exceptions import NotFound
-from django.db import transaction
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_control
-from django.utils.html import strip_tags
-from django.utils.translation import gettext as _
 from common.djangoapps.util.json_request import JsonResponseBadRequest
 from openedx.core.djangoapps.course_groups.cohorts import is_course_cohorted
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
@@ -1169,6 +1162,77 @@ class IssuedCertificatesView(ListAPIView):
     permission_name = permissions.VIEW_DASHBOARD
     serializer_class = IssuedCertificateSerializer
 
+    def _apply_certificate_status_filter(self, certificates, filter_type, CertificateStatuses):
+        """Apply status-based filters to certificate queryset."""
+        if filter_type == "received":
+            return certificates.filter(status=CertificateStatuses.downloadable)
+        elif filter_type == "not_received":
+            return certificates.filter(
+                status__in=[CertificateStatuses.notpassing, CertificateStatuses.unavailable]
+            )
+        elif filter_type == "audit_passing":
+            return certificates.filter(status=CertificateStatuses.audit_passing)
+        elif filter_type == "audit_not_passing":
+            return certificates.filter(status=CertificateStatuses.audit_notpassing)
+        elif filter_type == "error":
+            return certificates.filter(status=CertificateStatuses.error)
+        return certificates
+
+    def _get_allowlist_dict(self, course_key, CertificateAllowlist):
+        """Get allowlist entries as a dictionary keyed by user_id."""
+        allowlist_dict = {}
+        allowlist_entries = CertificateAllowlist.objects.filter(
+            course_id=course_key,
+            allowlist=True
+        ).select_related('user')
+
+        for entry in allowlist_entries:
+            allowlist_dict[entry.user_id] = {
+                'created': entry.created.strftime("%B %d, %Y"),
+                'notes': entry.notes or ''
+            }
+        return allowlist_dict
+
+    def _get_invalidation_dict(self, course_key, CertificateInvalidation):
+        """Get invalidation entries as a dictionary keyed by user_id."""
+        invalidation_dict = {}
+        invalidations = CertificateInvalidation.objects.filter(
+            generated_certificate__course_id=course_key,
+            active=True
+        ).select_related('generated_certificate__user', 'invalidated_by')
+
+        for inv in invalidations:
+            invalidation_dict[inv.generated_certificate.user_id] = {
+                'invalidated_by': inv.invalidated_by.email,
+                'created': inv.created.strftime("%B %d, %Y")
+            }
+        return invalidation_dict
+
+    def _build_certificate_result(self, cert, enrollment_dict, allowlist_dict, invalidation_dict):
+        """Build result dictionary for a single certificate."""
+        user = cert.user
+        allowlist_info = allowlist_dict.get(user.id)
+        invalidation_info = invalidation_dict.get(user.id)
+
+        # Determine special case
+        special_case = None
+        if allowlist_info:
+            special_case = "Exception"
+        elif invalidation_info:
+            special_case = "Invalidation"
+
+        return {
+            'username': user.username,
+            'email': user.email,
+            'enrollment_track': enrollment_dict.get(user.id, 'TBD'),
+            'certificate_status': cert.status,
+            'special_case': special_case,
+            'exception_granted': allowlist_info['created'] if allowlist_info else None,
+            'exception_notes': allowlist_info['notes'] if allowlist_info else None,
+            'invalidated_by': invalidation_info['invalidated_by'] if invalidation_info else None,
+            'invalidation_date': invalidation_info['created'] if invalidation_info else None,
+        }
+
     def get_queryset(self):
         """
         Returns the queryset of issued certificates with allowlist and invalidation information.
@@ -1192,22 +1256,16 @@ class IssuedCertificatesView(ListAPIView):
         filter_type = self.request.query_params.get("filter", "all")
 
         # Get certificates for the course
-        # Note: eligible_certificates manager excludes audit_passing/audit_notpassing by default
-        # For audit filters, we use objects manager to include them
         if filter_type in ['audit_passing', 'audit_not_passing', 'all']:
-            # Use objects manager to include audit certificates when needed
             certificates = GeneratedCertificate.objects.filter(
                 course_id=course_key
             ).select_related('user', 'user__profile')
         else:
-            # Use eligible_certificates for other filters (excludes audit certs)
             certificates = GeneratedCertificate.eligible_certificates.filter(
                 course_id=course_key
             ).select_related('user', 'user__profile')
 
         # Debug logging
-        import logging
-        log = logging.getLogger(__name__)
         cert_count = certificates.count()
         log.info(f"Certificate query for course {course_key}: found {cert_count} certificates")
         log.info(f"Filter type: {filter_type}, Search: '{search}'")
@@ -1216,44 +1274,11 @@ class IssuedCertificatesView(ListAPIView):
                 log.info(f"  - User: {cert.user.username}, Status: {cert.status}, Mode: {cert.mode}")
 
         # Apply filter based on filter type
-        if filter_type == "received":
-            certificates = certificates.filter(status=CertificateStatuses.downloadable)
-        elif filter_type == "not_received":
-            certificates = certificates.filter(
-                status__in=[CertificateStatuses.notpassing, CertificateStatuses.unavailable]
-            )
-        elif filter_type == "audit_passing":
-            certificates = certificates.filter(status=CertificateStatuses.audit_passing)
-        elif filter_type == "audit_not_passing":
-            certificates = certificates.filter(status=CertificateStatuses.audit_notpassing)
-        elif filter_type == "error":
-            certificates = certificates.filter(status=CertificateStatuses.error)
+        certificates = self._apply_certificate_status_filter(certificates, filter_type, CertificateStatuses)
 
-        # Get allowlist entries
-        allowlist_dict = {}
-        allowlist_entries = CertificateAllowlist.objects.filter(
-            course_id=course_key,
-            allowlist=True
-        ).select_related('user')
-
-        for entry in allowlist_entries:
-            allowlist_dict[entry.user_id] = {
-                'created': entry.created.strftime("%B %d, %Y"),
-                'notes': entry.notes or ''
-            }
-
-        # Get invalidation entries
-        invalidation_dict = {}
-        invalidations = CertificateInvalidation.objects.filter(
-            generated_certificate__course_id=course_key,
-            active=True
-        ).select_related('generated_certificate__user', 'invalidated_by')
-
-        for inv in invalidations:
-            invalidation_dict[inv.generated_certificate.user_id] = {
-                'invalidated_by': inv.invalidated_by.email,
-                'created': inv.created.strftime("%B %d, %Y")
-            }
+        # Get related data
+        allowlist_dict = self._get_allowlist_dict(course_key, CertificateAllowlist)
+        invalidation_dict = self._get_invalidation_dict(course_key, CertificateInvalidation)
 
         # Get enrollment data
         enrollments = CourseEnrollment.objects.filter(
@@ -1270,33 +1295,18 @@ class IssuedCertificatesView(ListAPIView):
             if search and search not in user.username.lower() and search not in user.email.lower():
                 continue
 
+            # Apply special case filters
             allowlist_info = allowlist_dict.get(user.id)
             invalidation_info = invalidation_dict.get(user.id)
 
-            # Determine special case
-            special_case = None
-            if allowlist_info:
-                special_case = "Exception"
-            elif invalidation_info:
-                special_case = "Invalidation"
-
-            # Apply additional filters
             if filter_type == "granted_exceptions" and not allowlist_info:
                 continue
             elif filter_type == "invalidated" and not invalidation_info:
                 continue
 
-            results.append({
-                'username': user.username,
-                'email': user.email,
-                'enrollment_track': enrollment_dict.get(user.id, 'TBD'),
-                'certificate_status': cert.status,
-                'special_case': special_case,
-                'exception_granted': allowlist_info['created'] if allowlist_info else None,
-                'exception_notes': allowlist_info['notes'] if allowlist_info else None,
-                'invalidated_by': invalidation_info['invalidated_by'] if invalidation_info else None,
-                'invalidation_date': invalidation_info['created'] if invalidation_info else None,
-            })
+            results.append(self._build_certificate_result(
+                cert, enrollment_dict, allowlist_dict, invalidation_dict
+            ))
 
         # Sort by username
         results.sort(key=lambda x: x['username'])
@@ -1454,8 +1464,6 @@ class RegenerateCertificatesView(DeveloperErrorViewMixin, APIView):
         """
         Initiate certificate regeneration for a course.
         """
-        from lms.djangoapps.instructor_task import api as task_api
-
         course_key = CourseKey.from_string(course_id)
         course = get_course_by_id(course_key)
 
@@ -1497,7 +1505,7 @@ class RegenerateCertificatesView(DeveloperErrorViewMixin, APIView):
                 'message': _('Certificate regeneration task has been started')
             }, status=status.HTTP_200_OK)
 
-        except Exception as exc:
+        except (AlreadyRunningError, QueueConnectionError) as exc:
             log.error(f"Error starting certificate regeneration: {exc}")
             return Response(
                 {'error': str(exc)},

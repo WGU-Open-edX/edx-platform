@@ -514,7 +514,9 @@ class CertificateGenerationHistorySerializer(serializers.Serializer):
     """
     task_name = serializers.CharField(help_text="Task name (Generated or Regenerated)")
     date = serializers.CharField(help_text="Date when the task was created (formatted)")
-    details = serializers.CharField(help_text="Details about the certificate generation (e.g., 'audit not passing states', 'For exceptions')")
+    details = serializers.CharField(
+        help_text="Details about the certificate generation (e.g., 'audit not passing states', 'For exceptions')"
+    )
 
 
 class RegenerateCertificatesSerializer(serializers.Serializer):
