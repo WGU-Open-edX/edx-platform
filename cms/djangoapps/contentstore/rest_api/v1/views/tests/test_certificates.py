@@ -46,8 +46,6 @@ class CourseCertificatesAuthzViewTest(AuthzTestMixin, CourseTestCase, Permission
     Tests for CourseCertificatesView with AuthZ enabled.
     """
 
-    authz_roles_to_assign = [COURSE_STAFF.external_key]
-
     def setUp(self):
         super().setUp()
         self.url = reverse(
