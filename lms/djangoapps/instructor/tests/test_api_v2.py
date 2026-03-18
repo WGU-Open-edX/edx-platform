@@ -1823,9 +1823,11 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         """
         Test filtering certificates by search term.
         """
-        # Mock queryset methods
+        # Mock queryset methods - must be fully iterable
         mock_queryset = Mock()
         mock_queryset.select_related.return_value = mock_queryset
+        mock_queryset.filter.return_value = mock_queryset
+        mock_queryset.count.return_value = 0
         mock_queryset.__iter__ = Mock(return_value=iter([]))
         mock_filter.return_value = mock_queryset
 
@@ -1975,12 +1977,12 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
 
         if results:
             entry = results[0]
-            # Verify all required fields are present
-            self.assertIn('task_name', entry)
+            # Verify all required fields are present (camelCase from serializer)
+            self.assertIn('taskName', entry)
             self.assertIn('date', entry)
             self.assertIn('details', entry)
 
             # Verify data types
-            self.assertIsInstance(entry['task_name'], str)
+            self.assertIsInstance(entry['taskName'], str)
             self.assertIsInstance(entry['date'], str)
             self.assertIsInstance(entry['details'], str)

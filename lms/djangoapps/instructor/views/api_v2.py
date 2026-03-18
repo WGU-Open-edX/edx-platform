@@ -1172,26 +1172,26 @@ class IssuedCertificatesView(ListAPIView):
     permission_name = permissions.VIEW_DASHBOARD
     serializer_class = IssuedCertificateSerializer
 
-    def _apply_certificate_status_filter(self, certificates, filter_type, CertificateStatuses):
+    def _apply_certificate_status_filter(self, certificates, filter_type, cert_statuses):
         """Apply status-based filters to certificate queryset."""
         if filter_type == "received":
-            return certificates.filter(status=CertificateStatuses.downloadable)
+            return certificates.filter(status=cert_statuses.downloadable)
         elif filter_type == "not_received":
             return certificates.filter(
-                status__in=[CertificateStatuses.notpassing, CertificateStatuses.unavailable]
+                status__in=[cert_statuses.notpassing, cert_statuses.unavailable]
             )
         elif filter_type == "audit_passing":
-            return certificates.filter(status=CertificateStatuses.audit_passing)
+            return certificates.filter(status=cert_statuses.audit_passing)
         elif filter_type == "audit_not_passing":
-            return certificates.filter(status=CertificateStatuses.audit_notpassing)
+            return certificates.filter(status=cert_statuses.audit_notpassing)
         elif filter_type == "error":
-            return certificates.filter(status=CertificateStatuses.error)
+            return certificates.filter(status=cert_statuses.error)
         return certificates
 
-    def _get_allowlist_dict(self, course_key, CertificateAllowlist):
+    def _get_allowlist_dict(self, course_key, cert_allowlist):
         """Get allowlist entries as a dictionary keyed by user_id."""
         allowlist_dict = {}
-        allowlist_entries = CertificateAllowlist.objects.filter(
+        allowlist_entries = cert_allowlist.objects.filter(
             course_id=course_key,
             allowlist=True
         ).select_related('user')
@@ -1203,10 +1203,10 @@ class IssuedCertificatesView(ListAPIView):
             }
         return allowlist_dict
 
-    def _get_invalidation_dict(self, course_key, CertificateInvalidation):
+    def _get_invalidation_dict(self, course_key, cert_invalidation):
         """Get invalidation entries as a dictionary keyed by user_id."""
         invalidation_dict = {}
-        invalidations = CertificateInvalidation.objects.filter(
+        invalidations = cert_invalidation.objects.filter(
             generated_certificate__course_id=course_key,
             active=True
         ).select_related('generated_certificate__user', 'invalidated_by')
@@ -1277,7 +1277,10 @@ class IssuedCertificatesView(ListAPIView):
             )
 
         # Debug logging
-        log.debug(f"Certificate query for course {course_key}: found {certificates.count()} certificates, filter_type: {filter_type}")
+        log.debug(
+            f"Certificate query for course {course_key}: "
+            f"found {certificates.count()} certificates, filter_type: {filter_type}"
+        )
 
         # Apply filter based on filter type
         certificates = self._apply_certificate_status_filter(certificates, filter_type, CertificateStatuses)
