@@ -495,27 +495,38 @@ class IssuedCertificateSerializer(serializers.Serializer):
     """
     username = serializers.CharField(help_text="Username of the learner")
     email = serializers.EmailField(help_text="Email address of the learner")
-    enrollment_track = serializers.CharField(help_text="Enrollment track/mode (e.g., verified, audit)")
-    certificate_status = serializers.CharField(help_text="Certificate status (e.g., downloadable, notpassing)")
-    special_case = serializers.CharField(
+    enrollmentTrack = serializers.CharField(
+        source='enrollment_track',
+        help_text="Enrollment track/mode (e.g., verified, audit)"
+    )
+    certificateStatus = serializers.CharField(
+        source='certificate_status',
+        help_text="Certificate status (e.g., downloadable, notpassing)"
+    )
+    specialCase = serializers.CharField(
+        source='special_case',
         allow_null=True,
         help_text="Special case type (Exception or Invalidation)"
     )
-    exception_granted = serializers.CharField(
+    exceptionGranted = serializers.CharField(
+        source='exception_granted',
         allow_null=True,
-        help_text="Date when exception was granted"
+        help_text="Date when exception was granted in ISO 8601 format"
     )
-    exception_notes = serializers.CharField(
+    exceptionNotes = serializers.CharField(
+        source='exception_notes',
         allow_null=True,
         help_text="Notes about the exception"
     )
-    invalidated_by = serializers.CharField(
+    invalidatedBy = serializers.CharField(
+        source='invalidated_by',
         allow_null=True,
         help_text="Email of user who invalidated the certificate"
     )
-    invalidation_date = serializers.CharField(
+    invalidationDate = serializers.CharField(
+        source='invalidation_date',
         allow_null=True,
-        help_text="Date when certificate was invalidated"
+        help_text="Date when certificate was invalidated in ISO 8601 format"
     )
 
 
@@ -523,8 +534,11 @@ class CertificateGenerationHistorySerializer(serializers.Serializer):
     """
     Serializer for certificate generation history.
     """
-    task_name = serializers.CharField(help_text="Task name (Generated or Regenerated)")
-    date = serializers.CharField(help_text="Date when the task was created (formatted)")
+    taskName = serializers.CharField(
+        source='task_name',
+        help_text="Task name (Generated or Regenerated)"
+    )
+    date = serializers.CharField(help_text="Date when the task was created in ISO 8601 format")
     details = serializers.CharField(
         help_text="Details about the certificate generation (e.g., 'audit not passing states', 'For exceptions')"
     )

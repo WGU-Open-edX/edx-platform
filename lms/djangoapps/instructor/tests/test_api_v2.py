@@ -1734,3 +1734,253 @@ class UnitExtensionsViewTest(SharedModuleStoreTestCase):
         self.assertIsInstance(extension['email'], str)
         self.assertIsInstance(extension['unit_title'], str)
         self.assertIsInstance(extension['unit_location'], str)
+
+
+@ddt.ddt
+class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
+    """
+    Tests for the IssuedCertificatesView API endpoint.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.course = CourseFactory.create(
+            org='edX',
+            number='TestX',
+            run='Test_Course',
+            display_name='Test Course',
+        )
+        cls.course_key = cls.course.id
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.instructor = InstructorFactory.create(course_key=self.course_key)
+        self.staff = StaffFactory.create(course_key=self.course_key)
+        self.student1 = UserFactory.create(username='student1', email='student1@example.com')
+        self.student2 = UserFactory.create(username='student2', email='student2@example.com')
+
+        # Enroll students
+        CourseEnrollmentFactory.create(
+            user=self.student1,
+            course_id=self.course_key,
+            mode='verified',
+            is_active=True
+        )
+        CourseEnrollmentFactory.create(
+            user=self.student2,
+            course_id=self.course_key,
+            mode='audit',
+            is_active=True
+        )
+
+    def _get_url(self, course_id=None):
+        """Helper to get the API URL."""
+        if course_id is None:
+            course_id = str(self.course_key)
+        return reverse('instructor_api_v2:issued_certificates', kwargs={'course_id': course_id})
+
+    def test_get_issued_certificates_as_staff(self):
+        """
+        Test that staff can retrieve issued certificates.
+        """
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get(self._get_url())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('results', response.data)
+        self.assertIn('count', response.data)
+
+    def test_get_issued_certificates_unauthorized(self):
+        """
+        Test that students cannot access issued certificates endpoint.
+        """
+        self.client.force_authenticate(user=self.student1)
+        response = self.client.get(self._get_url())
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_get_issued_certificates_unauthenticated(self):
+        """
+        Test that unauthenticated users cannot access the endpoint.
+        """
+        response = self.client.get(self._get_url())
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_issued_certificates_nonexistent_course(self):
+        """
+        Test error handling for non-existent course.
+        """
+        self.client.force_authenticate(user=self.instructor)
+        nonexistent_course_id = 'course-v1:edX+NonExistent+2024'
+        response = self.client.get(self._get_url(course_id=nonexistent_course_id))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch('lms.djangoapps.instructor.views.api_v2.GeneratedCertificate.objects.filter')
+    def test_search_filter(self, mock_filter):
+        """
+        Test filtering certificates by search term.
+        """
+        # Mock queryset methods
+        mock_queryset = Mock()
+        mock_queryset.select_related.return_value = mock_queryset
+        mock_queryset.__iter__ = Mock(return_value=iter([]))
+        mock_filter.return_value = mock_queryset
+
+        self.client.force_authenticate(user=self.instructor)
+        params = {'search': 'student1'}
+        response = self.client.get(self._get_url(), params)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @ddt.data(
+        'received',
+        'not_received',
+        'audit_passing',
+        'audit_not_passing',
+        'error',
+        'granted_exceptions',
+        'invalidated',
+    )
+    def test_filter_types(self, filter_type):
+        """
+        Test various filter types for certificates.
+        """
+        self.client.force_authenticate(user=self.instructor)
+        params = {'filter': filter_type}
+        response = self.client.get(self._get_url(), params)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('results', response.data)
+
+    def test_pagination(self):
+        """
+        Test pagination parameters work correctly.
+        """
+        self.client.force_authenticate(user=self.instructor)
+        params = {'page': '1', 'page_size': '10'}
+        response = self.client.get(self._get_url(), params)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('count', response.data)
+        self.assertIn('next', response.data)
+        self.assertIn('previous', response.data)
+        self.assertIn('results', response.data)
+
+
+@ddt.ddt
+class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
+    """
+    Tests for the CertificateGenerationHistoryView API endpoint.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.course = CourseFactory.create(
+            org='edX',
+            number='TestX',
+            run='Test_Course',
+            display_name='Test Course',
+        )
+        cls.course_key = cls.course.id
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.instructor = InstructorFactory.create(course_key=self.course_key)
+        self.staff = StaffFactory.create(course_key=self.course_key)
+        self.student = UserFactory.create()
+
+    def _get_url(self, course_id=None):
+        """Helper to get the API URL."""
+        if course_id is None:
+            course_id = str(self.course_key)
+        return reverse('instructor_api_v2:certificate_generation_history', kwargs={'course_id': course_id})
+
+    def test_get_generation_history_as_staff(self):
+        """
+        Test that staff can retrieve certificate generation history.
+        """
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get(self._get_url())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('results', response.data)
+        self.assertIn('count', response.data)
+
+    def test_get_generation_history_unauthorized(self):
+        """
+        Test that students cannot access generation history endpoint.
+        """
+        self.client.force_authenticate(user=self.student)
+        response = self.client.get(self._get_url())
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_get_generation_history_unauthenticated(self):
+        """
+        Test that unauthenticated users cannot access the endpoint.
+        """
+        response = self.client.get(self._get_url())
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_generation_history_nonexistent_course(self):
+        """
+        Test error handling for non-existent course.
+        """
+        self.client.force_authenticate(user=self.instructor)
+        nonexistent_course_id = 'course-v1:edX+NonExistent+2024'
+        response = self.client.get(self._get_url(course_id=nonexistent_course_id))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_pagination(self):
+        """
+        Test pagination parameters work correctly.
+        """
+        self.client.force_authenticate(user=self.instructor)
+        params = {'page': '1', 'page_size': '10'}
+        response = self.client.get(self._get_url(), params)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('count', response.data)
+        self.assertIn('next', response.data)
+        self.assertIn('previous', response.data)
+        self.assertIn('results', response.data)
+
+    @patch('lms.djangoapps.instructor.views.api_v2.CertificateGenerationHistory.objects.filter')
+    def test_history_entry_structure(self, mock_filter):
+        """
+        Test that history entries have the correct structure.
+        """
+        # Mock history entry
+        mock_entry = Mock()
+        mock_entry.is_regeneration = True
+        mock_entry.created = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)
+        mock_entry.get_certificate_generation_candidates.return_value = "audit not passing states"
+
+        mock_queryset = Mock()
+        mock_queryset.select_related.return_value = mock_queryset
+        mock_queryset.order_by.return_value = [mock_entry]
+        mock_filter.return_value = mock_queryset
+
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self._get_url())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data['results']
+
+        if results:
+            entry = results[0]
+            # Verify all required fields are present
+            self.assertIn('task_name', entry)
+            self.assertIn('date', entry)
+            self.assertIn('details', entry)
+
+            # Verify data types
+            self.assertIsInstance(entry['task_name'], str)
+            self.assertIsInstance(entry['date'], str)
+            self.assertIsInstance(entry['details'], str)

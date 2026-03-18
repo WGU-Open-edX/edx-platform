@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 import edx_api_doc_tools as apidocs
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils.decorators import method_decorator
 from django.utils.html import strip_tags
 from django.utils.translation import gettext as _
@@ -52,6 +53,15 @@ from lms.djangoapps.instructor_task.models import ReportStore
 from lms.djangoapps.instructor_task.tasks_helper.utils import upload_csv_file_to_report_store
 from openedx.core.lib.api.view_utils import DeveloperErrorViewMixin
 from openedx.core.lib.courses import get_course_by_id
+from common.djangoapps.student.models import CourseEnrollment
+from lms.djangoapps.certificates.models import (
+    GeneratedCertificate,
+    CertificateAllowlist,
+    CertificateInvalidation,
+    CertificateGenerationHistory,
+)
+from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates import api as certs_api
 from .serializers_v2 import (
     InstructorTaskListSerializer,
     CourseInformationSerializerV2,
@@ -1188,7 +1198,7 @@ class IssuedCertificatesView(ListAPIView):
 
         for entry in allowlist_entries:
             allowlist_dict[entry.user_id] = {
-                'created': entry.created.strftime("%B %d, %Y"),
+                'created': entry.created.isoformat(),
                 'notes': entry.notes or ''
             }
         return allowlist_dict
@@ -1204,7 +1214,7 @@ class IssuedCertificatesView(ListAPIView):
         for inv in invalidations:
             invalidation_dict[inv.generated_certificate.user_id] = {
                 'invalidated_by': inv.invalidated_by.email,
-                'created': inv.created.strftime("%B %d, %Y")
+                'created': inv.created.isoformat()
             }
         return invalidation_dict
 
@@ -1235,16 +1245,11 @@ class IssuedCertificatesView(ListAPIView):
 
     def get_queryset(self):
         """
-        Returns the queryset of issued certificates with allowlist and invalidation information.
-        """
-        from lms.djangoapps.certificates.models import (
-            GeneratedCertificate,
-            CertificateAllowlist,
-            CertificateInvalidation
-        )
-        from lms.djangoapps.certificates.data import CertificateStatuses
-        from common.djangoapps.student.models import CourseEnrollment
+        Returns the queryset of issued certificates for the course.
 
+        This method returns a Django QuerySet that will be further processed
+        by the list() method to build the final response data.
+        """
         course_id = self.kwargs["course_id"]
         course_key = CourseKey.from_string(course_id)
 
@@ -1252,8 +1257,8 @@ class IssuedCertificatesView(ListAPIView):
         get_course_by_id(course_key)
 
         # Get query parameters
-        search = self.request.query_params.get("search", "").lower()
         filter_type = self.request.query_params.get("filter", "all")
+        search = self.request.query_params.get("search", "").strip()
 
         # Get certificates for the course
         if filter_type in ['audit_passing', 'audit_not_passing', 'all']:
@@ -1265,16 +1270,32 @@ class IssuedCertificatesView(ListAPIView):
                 course_id=course_key
             ).select_related('user', 'user__profile')
 
+        # Apply search filter at database level
+        if search:
+            certificates = certificates.filter(
+                Q(user__username__icontains=search) | Q(user__email__icontains=search)
+            )
+
         # Debug logging
-        cert_count = certificates.count()
-        log.info(f"Certificate query for course {course_key}: found {cert_count} certificates")
-        log.info(f"Filter type: {filter_type}, Search: '{search}'")
-        if cert_count > 0:
-            for cert in list(certificates[:3]):
-                log.info(f"  - User: {cert.user.username}, Status: {cert.status}, Mode: {cert.mode}")
+        log.debug(f"Certificate query for course {course_key}: found {certificates.count()} certificates, filter_type: {filter_type}")
 
         # Apply filter based on filter type
         certificates = self._apply_certificate_status_filter(certificates, filter_type, CertificateStatuses)
+
+        return certificates
+
+    def list(self, request, *args, **kwargs):
+        """
+        Override list method to process certificates and return paginated results.
+        """
+        course_id = self.kwargs["course_id"]
+        course_key = CourseKey.from_string(course_id)
+
+        # Get the certificate queryset
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Get query parameters
+        filter_type = self.request.query_params.get("filter", "all")
 
         # Get related data
         allowlist_dict = self._get_allowlist_dict(course_key, CertificateAllowlist)
@@ -1288,14 +1309,10 @@ class IssuedCertificatesView(ListAPIView):
 
         # Build result list
         results = []
-        for cert in certificates:
+        for cert in queryset:
             user = cert.user
 
-            # Apply search filter
-            if search and search not in user.username.lower() and search not in user.email.lower():
-                continue
-
-            # Apply special case filters
+            # Apply special case filters that can't be done at database level
             allowlist_info = allowlist_dict.get(user.id)
             invalidation_info = invalidation_dict.get(user.id)
 
@@ -1311,7 +1328,14 @@ class IssuedCertificatesView(ListAPIView):
         # Sort by username
         results.sort(key=lambda x: x['username'])
 
-        return results
+        # Apply pagination
+        page = self.paginate_queryset(results)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(results, many=True)
+        return Response(serializer.data)
 
 
 class CertificateGenerationHistoryView(ListAPIView):
@@ -1364,9 +1388,10 @@ class CertificateGenerationHistoryView(ListAPIView):
     def get_queryset(self):
         """
         Returns the queryset of certificate generation history.
-        """
-        from lms.djangoapps.certificates.models import CertificateGenerationHistory
 
+        This method returns a Django QuerySet that will be further processed
+        by the list() method to build the final response data.
+        """
         course_id = self.kwargs["course_id"]
         course_key = CourseKey.from_string(course_id)
 
@@ -1378,25 +1403,50 @@ class CertificateGenerationHistoryView(ListAPIView):
             course_id=course_key
         ).select_related('generated_by', 'instructor_task').order_by('-created')
 
+        return history
+
+    def _process_history_entry(self, entry):
+        """
+        Process a single certificate generation history entry into a result dictionary.
+
+        Args:
+            entry: CertificateGenerationHistory instance
+
+        Returns:
+            dict: Processed history entry with task_name, date (ISO 8601), and details
+        """
+        # Determine task name
+        task_name = "Regenerated" if entry.is_regeneration else "Generated"
+
+        # Format date in ISO 8601 format for frontend to handle display formatting
+        date = entry.created.isoformat()
+
+        # Get details about what was generated/regenerated
+        details = str(entry.get_certificate_generation_candidates())
+
+        return {
+            'task_name': task_name,
+            'date': date,
+            'details': details,
+        }
+
+    def list(self, request, *args, **kwargs):
+        """
+        Override list method to process history entries and return paginated results.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+
         # Build result list
-        results = []
-        for entry in history:
-            # Determine task name
-            task_name = "Regenerated" if entry.is_regeneration else "Generated"
+        results = [self._process_history_entry(entry) for entry in queryset]
 
-            # Format date
-            date = entry.created.strftime("%B %d, %Y")
+        # Apply pagination
+        page = self.paginate_queryset(results)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
-            # Get details about what was generated/regenerated
-            details = str(entry.get_certificate_generation_candidates())
-
-            results.append({
-                'task_name': task_name,
-                'date': date,
-                'details': details,
-            })
-
-        return results
+        serializer = self.get_serializer(results, many=True)
+        return Response(serializer.data)
 
 
 @method_decorator(cache_control(no_cache=True, no_store=True, must_revalidate=True), name='dispatch')
@@ -1560,8 +1610,6 @@ class CertificateConfigView(DeveloperErrorViewMixin, APIView):
         """
         Retrieve certificate configuration.
         """
-        from lms.djangoapps.certificates import api as certs_api
-
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists
         get_course_by_id(course_key)
