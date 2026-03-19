@@ -56,7 +56,7 @@ class CourseCertificatesAuthzViewTest(AuthzTestMixin, CourseTestCase, Permission
     def test_authorized_user_can_access(self):
         """User with COURSE_STAFF role can access."""
         self._add_course_certificates(count=2, signatory_count=2)
-        self.add_user_to_role(self.authorized_user, COURSE_STAFF.external_key, self.course.id)
+        self.add_user_to_role_in_course(self.authorized_user, COURSE_STAFF.external_key, self.course.id)
         resp = self.authorized_client.get(self.url)
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
@@ -66,6 +66,6 @@ class CourseCertificatesAuthzViewTest(AuthzTestMixin, CourseTestCase, Permission
         This case validates that a non-staff user cannot access.
         """
         self._add_course_certificates(count=2, signatory_count=2)
-        self.add_user_to_role(self.authorized_user, COURSE_EDITOR.external_key, self.course.id)
+        self.add_user_to_role_in_course(self.authorized_user, COURSE_EDITOR.external_key, self.course.id)
         resp = self.authorized_client.get(self.url)
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)

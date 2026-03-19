@@ -103,7 +103,7 @@ class CourseCertificatesView(DeveloperErrorViewMixin, APIView):
             request.user,
             COURSES_MANAGE_CERTIFICATES.identifier,
             course_key,
-            LegacyAuthoringPermission.READ
+            LegacyAuthoringPermission.WRITE
         ):
             self.permission_denied(request)
 
