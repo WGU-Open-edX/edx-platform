@@ -20,11 +20,9 @@ def has_view_object_tags_access(user, object_id):
     """
     # If authz is enabled, check for the export tags authz permission
     course_key = None
-    """
-    Try to parse the object_id as a CourseKey, if it fails,
-    it means object_id is not a course, so we don't validate against authz
-    and fallback to the legacy check.
-    """
+    # Try to parse the object_id as a CourseKey, if it fails,
+    # it means object_id is not a course, so we don't validate against authz
+    # and fallback to the legacy check.
     try:
         course_key = CourseKey.from_string(object_id)
     except InvalidKeyError:
