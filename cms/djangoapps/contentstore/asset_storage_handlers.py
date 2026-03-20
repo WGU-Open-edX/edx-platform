@@ -33,6 +33,7 @@ from openedx_authz.constants.permissions import (
     COURSES_EDIT_FILES,
 )
 from openedx_filters.content_authoring.filters import LMSPageURLRequested
+from openedx.core.toggles import enable_authz_course_authoring
 from xmodule.contentstore.content import StaticContent  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.contentstore.django import contentstore  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.exceptions import NotFoundError  # lint-amnesty, pylint: disable=wrong-import-order
@@ -80,7 +81,32 @@ def handle_assets(request, course_key_string=None, asset_key_string=None):
         json: delete an asset
     '''
     course_key = CourseKey.from_string(course_key_string)
-    # Everyone should have at least view access to proceedd.
+    # Enforce file permissions.
+    _authz_enforce_file_permissions(request, course_key)
+
+    response_format = get_response_format(request)
+    if request_response_format_is_json(request, response_format):
+        if request.method == 'GET':
+            return _assets_json(request, course_key)
+
+        # POST, PUT, DELETE typically invoke this
+        asset_key = AssetKey.from_string(asset_key_string) if asset_key_string else None
+        return update_asset(request, course_key, asset_key)
+
+    elif request.method == 'GET':  # assume html
+        return _asset_index(request, course_key)
+
+    return HttpResponseNotFound()
+
+def _authz_enforce_file_permissions(request, course_key):
+    """
+    Enforce permissions for file operations in asset handler.
+    When the authz.enable_course_authoring flag is enabled for the specified course,
+    This function enforces the appropiate file permission depending on request content.
+    When the flag is disabled, it enforces the legacy has_studio_write_access permission.
+    """
+    # Enforce permisison to view files.
+    # This is the minimum permission needed for handling assets.
     if not user_has_course_permission(
         request.user,
         COURSES_VIEW_FILES.identifier,
@@ -89,11 +115,7 @@ def handle_assets(request, course_key_string=None, asset_key_string=None):
     ):
         raise PermissionDenied()
 
-    response_format = get_response_format(request)
-    if request_response_format_is_json(request, response_format):
-        if request.method == 'GET':
-            return _assets_json(request, course_key)
-
+    if enable_authz_course_authoring(course_key):
         # Check create, edit and delete permissions for AuthZ-enabled courses.
         # When we get a PUT or POST that includes a file, it's a create.
         if request.method in ('PUT', 'POST') and 'file' in request.FILES and not user_has_course_permission(
@@ -119,16 +141,6 @@ def handle_assets(request, course_key_string=None, asset_key_string=None):
             LegacyAuthoringPermission.WRITE
         ):
             raise PermissionDenied()
-
-        # POST, PUT, DELETE typically invoke this
-        asset_key = AssetKey.from_string(asset_key_string) if asset_key_string else None
-        return update_asset(request, course_key, asset_key)
-
-    elif request.method == 'GET':  # assume html
-        return _asset_index(request, course_key)
-
-    return HttpResponseNotFound()
-
 
 def get_asset_usage_path_json(request, course_key, asset_key_string):
     """
