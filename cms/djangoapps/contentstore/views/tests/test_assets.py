@@ -611,8 +611,16 @@ class AuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
 
         if r.status_code == 200:
             sample_asset_key = json.loads(r.content.decode('utf-8'))['asset']['id']
-            self.asset_url = reverse_course_url('assets_handler', self.course.id, kwargs={'asset_key_string': sample_asset_key})
-            self.asset_usage_url = reverse_course_url('asset_usage_path_handler', self.course.id, kwargs={'asset_key_string': sample_asset_key})
+            self.asset_url = reverse_course_url(
+                'assets_handler',
+                self.course.id,
+                kwargs={'asset_key_string': sample_asset_key}
+            )
+            self.asset_usage_url = reverse_course_url(
+                'asset_usage_path_handler',
+                self.course.id,
+                kwargs={'asset_key_string': sample_asset_key}
+            )
 
     def _put_asset(self, client):
         # Simulate a PUT (edit) request with a JSON body
