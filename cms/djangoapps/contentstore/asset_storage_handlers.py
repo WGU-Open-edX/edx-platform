@@ -17,6 +17,8 @@ from django.utils.translation import gettext as _
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods, require_POST
 from opaque_keys.edx.keys import AssetKey, CourseKey
+from openedx.core.djangoapps.authz.constants import LegacyAuthoringPermission
+from openedx.core.djangoapps.authz.decorators import user_has_course_permission
 from pymongo import ASCENDING, DESCENDING
 
 from common.djangoapps.student.auth import has_course_author_access
@@ -25,6 +27,7 @@ from common.djangoapps.util.json_request import JsonResponse
 from openedx.core.djangoapps.contentserver.caching import del_cached_content
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_api.models import UserPreference
+from openedx_authz.constants.permissions import COURSES_VIEW_FILES, COURSES_CREATE_FILES, COURSES_DELETE_FILES, COURSES_EDIT_FILES
 from openedx_filters.content_authoring.filters import LMSPageURLRequested
 from xmodule.contentstore.content import StaticContent  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.contentstore.django import contentstore  # lint-amnesty, pylint: disable=wrong-import-order
@@ -73,13 +76,45 @@ def handle_assets(request, course_key_string=None, asset_key_string=None):
         json: delete an asset
     '''
     course_key = CourseKey.from_string(course_key_string)
-    if not has_course_author_access(request.user, course_key):
+    # Everyone should have at least view access to proceedd.
+    if not user_has_course_permission(
+        request.user,
+        COURSES_VIEW_FILES.identifier,
+        course_key,
+        LegacyAuthoringPermission.WRITE
+    ):
         raise PermissionDenied()
 
     response_format = get_response_format(request)
     if request_response_format_is_json(request, response_format):
         if request.method == 'GET':
             return _assets_json(request, course_key)
+
+        # Check create, edit and delete permissions for AuthZ-enabled courses.
+        # When we get a PUT or POST that includes a file, it's a create.
+        if request.method in ('PUT', 'POST') and 'file' in request.FILES and not user_has_course_permission(
+            request.user,
+            COURSES_CREATE_FILES.identifier,
+            course_key,
+            LegacyAuthoringPermission.WRITE
+        ):
+            raise PermissionDenied()
+        # When we get a PUT or POST and no file, it's an edit
+        if request.method in ('PUT', 'POST') and not user_has_course_permission(
+            request.user,
+            COURSES_EDIT_FILES.identifier,
+            course_key,
+            LegacyAuthoringPermission.WRITE
+        ):
+            raise PermissionDenied()
+
+        if request.method == 'DELETE' and not user_has_course_permission(
+            request.user,
+            COURSES_DELETE_FILES.identifier,
+            course_key,
+            LegacyAuthoringPermission.WRITE
+        ):
+            raise PermissionDenied()
 
         # POST, PUT, DELETE typically invoke this
         asset_key = AssetKey.from_string(asset_key_string) if asset_key_string else None
@@ -96,7 +131,12 @@ def get_asset_usage_path_json(request, course_key, asset_key_string):
     Get a list of units with ancestors that use given asset.
     """
     course_key = CourseKey.from_string(course_key)
-    if not has_course_author_access(request.user, course_key):
+    if not user_has_course_permission(
+        request.user,
+        COURSES_VIEW_FILES.identifier,
+        course_key,
+        LegacyAuthoringPermission.WRITE
+    ):
         raise PermissionDenied()
     asset_location = AssetKey.from_string(asset_key_string) if asset_key_string else None
     usage_locations = _get_asset_usage_path(course_key, [{'asset_key': asset_location}])
