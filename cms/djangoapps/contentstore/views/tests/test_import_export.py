@@ -47,7 +47,7 @@ from common.djangoapps.student.tests.factories import UserFactory
 from common.djangoapps.util import milestones_helpers
 from openedx.core.djangoapps.authz.tests.mixins import CourseAuthzTestMixin
 from openedx.core.lib.extract_archive import safe_extractall
-from openedx_authz.constants.roles import COURSE_STAFF
+from openedx_authz.constants.roles import COURSE_DATA_RESEARCHER, COURSE_STAFF
 from xmodule.contentstore.django import contentstore
 from xmodule.modulestore import LIBRARY_ROOT, ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
@@ -1453,6 +1453,20 @@ class ImportAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
         resp = self.import_file_in_course(client)
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
+    def test_non_staff_user_cannot_access(self):
+        """
+        User without permissions should be denied.
+        This case validates that a non-staff user cannot access even
+        if they have course author access to the course.
+        """
+        non_staff_user = UserFactory(password=self.password)
+        non_staff_client = APIClient()
+        self.add_user_to_role(non_staff_user, COURSE_DATA_RESEARCHER.external_key)
+        non_staff_client.login(username=non_staff_user.username, password=self.password)
+
+        resp = non_staff_client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
 
 class ImportStatusAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
     """
@@ -1503,6 +1517,20 @@ class ImportStatusAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
         resp = client.get(self.get_url(self.course_key))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
+    def test_non_staff_user_cannot_access(self):
+        """
+        User without permissions should be denied.
+        This case validates that a non-staff user cannot access even
+        if they have course author access to the course.
+        """
+        non_staff_user = UserFactory(password=self.password)
+        non_staff_client = APIClient()
+        self.add_user_to_role(non_staff_user, COURSE_DATA_RESEARCHER.external_key)
+        non_staff_client.login(username=non_staff_user.username, password=self.password)
+
+        resp = non_staff_client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
 
 class ExportStatusAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
     """
@@ -1552,6 +1580,20 @@ class ExportStatusAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
         resp = client.get(self.get_url(self.course_key))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
+    def test_non_staff_user_cannot_access(self):
+        """
+        User without permissions should be denied.
+        This case validates that a non-staff user cannot access even
+        if they have course author access to the course.
+        """
+        non_staff_user = UserFactory(password=self.password)
+        non_staff_client = APIClient()
+        self.add_user_to_role(non_staff_user, COURSE_DATA_RESEARCHER.external_key)
+        non_staff_client.login(username=non_staff_user.username, password=self.password)
+
+        resp = non_staff_client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
 
 class ExportAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
     """
@@ -1600,6 +1642,20 @@ class ExportAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
 
         resp = client.post(self.get_url(self.course_key))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_non_staff_user_cannot_access(self):
+        """
+        User without permissions should be denied.
+        This case validates that a non-staff user cannot access even
+        if they have course author access to the course.
+        """
+        non_staff_user = UserFactory(password=self.password)
+        non_staff_client = APIClient()
+        self.add_user_to_role(non_staff_user, COURSE_DATA_RESEARCHER.external_key)
+        non_staff_client.login(username=non_staff_user.username, password=self.password)
+
+        resp = non_staff_client.post(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class ExportOutputAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
@@ -1676,3 +1732,17 @@ class ExportOutputAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
         client.login(username=superuser.username, password=self.password)
         resp = client.get(self.get_url(self.course_key))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_non_staff_user_cannot_access(self):
+        """
+        User without permissions should be denied.
+        This case validates that a non-staff user cannot access even
+        if they have course author access to the course.
+        """
+        non_staff_user = UserFactory(password=self.password)
+        non_staff_client = APIClient()
+        self.add_user_to_role(non_staff_user, COURSE_DATA_RESEARCHER.external_key)
+        non_staff_client.login(username=non_staff_user.username, password=self.password)
+
+        resp = non_staff_client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
