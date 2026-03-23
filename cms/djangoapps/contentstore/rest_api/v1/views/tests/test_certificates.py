@@ -8,7 +8,7 @@ from openedx_authz.constants.roles import COURSE_STAFF, COURSE_EDITOR
 
 from cms.djangoapps.contentstore.tests.utils import CourseTestCase
 from cms.djangoapps.contentstore.views.tests.test_certificates import HelperMethods
-from openedx.core.djangoapps.authz.tests.mixins import AuthzTestMixin
+from openedx.core.djangoapps.authz.tests.mixins import CourseAuthoringAuthzTestMixin
 
 from ...mixins import PermissionAccessMixin
 
@@ -41,7 +41,9 @@ class CourseCertificatesViewTest(CourseTestCase, PermissionAccessMixin, HelperMe
         self.assertEqual(response_data["course_number"], self.course.number)
 
 
-class CourseCertificatesAuthzViewTest(AuthzTestMixin, CourseTestCase, PermissionAccessMixin, HelperMethods):
+class CourseCertificatesAuthzViewTest(
+        CourseAuthoringAuthzTestMixin, CourseTestCase, PermissionAccessMixin, HelperMethods
+    ):
     """
     Tests for CourseCertificatesView with AuthZ enabled.
     """

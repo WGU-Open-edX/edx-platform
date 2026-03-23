@@ -14,11 +14,15 @@ from openedx.core import toggles as core_toggles
 from common.djangoapps.student.tests.factories import UserFactory
 
 
-class AuthzTestMixin:
+class CourseAuthoringAuthzTestMixin:
     """
-    Base mixin for testing AuthZ endpoints.
-    Provides setup and helper methods for testing
-    AuthZ policies and permissions.
+    Base mixin for testing AuthZ in the course authoring context.
+
+    Responsibilities:
+    - Enable course authoring AuthZ feature flag
+    - Seed policies into the AuthZ enforcer
+    - Provide authenticated test clients
+    - Provide helpers for assigning roles within a course scope
     """
 
     @classmethod
@@ -85,13 +89,19 @@ class AuthzTestMixin:
         )
 
 
-class CourseAuthzTestMixin(AuthzTestMixin):
+class CourseAuthzTestMixin(CourseAuthoringAuthzTestMixin):
     """
     Reusable mixin for testing course-scoped AuthZ endpoints.
     """
 
     authz_roles_to_assign = [COURSE_STAFF.external_key]
-    course_key = None
+
+    @property
+    def course_key(self):
+        """
+        Must be defined by subclasses.
+        """
+        raise NotImplementedError("Tests using CourseAuthzTestMixin must define 'course_key'")
 
     def setUp(self):
         super().setUp()
