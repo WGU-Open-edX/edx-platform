@@ -413,3 +413,29 @@ class CourseUpdateAuthzTest(CourseAuthzTestMixin, CourseTestCase):
     def test_unauthorized_user_cannot_post(self):
         resp = self._create_update(self.unauthorized_client)
         self.assertEqual(resp.status_code, 403)
+
+    # -- Staff/superuser without authz role: access via enforcer admin check --
+
+    def test_django_staff_without_role_can_get(self):
+        staff_user = UserFactory(is_staff=True)
+        client = self._make_client_for_user(staff_user)
+        resp = client.get_json(self.create_update_url())
+        self.assertEqual(resp.status_code, 200)
+
+    def test_django_staff_without_role_can_post(self):
+        staff_user = UserFactory(is_staff=True)
+        client = self._make_client_for_user(staff_user)
+        resp = self._create_update(client)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_superuser_without_role_can_get(self):
+        superuser = UserFactory(is_superuser=True)
+        client = self._make_client_for_user(superuser)
+        resp = client.get_json(self.create_update_url())
+        self.assertEqual(resp.status_code, 200)
+
+    def test_superuser_without_role_can_post(self):
+        superuser = UserFactory(is_superuser=True)
+        client = self._make_client_for_user(superuser)
+        resp = self._create_update(client)
+        self.assertEqual(resp.status_code, 200)
