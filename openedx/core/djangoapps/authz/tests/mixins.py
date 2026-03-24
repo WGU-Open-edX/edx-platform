@@ -45,8 +45,8 @@ class CourseAuthoringAuthzTestMixin:
 
         self._seed_policies()
 
-        self.authorized_user = UserFactory(username='authorized', password='test')
-        self.unauthorized_user = UserFactory(username='unauthorized', password='test')
+        self.authorized_user = UserFactory(password=self.password)
+        self.unauthorized_user = UserFactory(password=self.password)
 
         self.authorized_client = APIClient()
         self.authorized_client.force_authenticate(user=self.authorized_user)
