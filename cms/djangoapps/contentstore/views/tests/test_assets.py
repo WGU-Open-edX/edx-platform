@@ -601,10 +601,12 @@ class AuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
 
     authz_roles_to_assign = []
 
+    @property
+    def course_key(self):
+        return self.course.id
+
     def setUp(self):
         super().setUp()
-
-        self.course_key = self.course.id
 
         # Upload a file for GET/PUT/DELETE tests
         r = self.upload_asset('authz_test_file')
