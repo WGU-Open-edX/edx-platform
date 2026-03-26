@@ -128,7 +128,7 @@ def _authz_enforce_file_permissions(request, course_key):
             ):
                 raise PermissionDenied()
             # When we get a PUT or POST and no file, it's an edit
-            elif request.method in ('PUT', 'POST') and not user_has_course_permission(
+            if request.method in ('PUT', 'POST') and not user_has_course_permission(
                 request.user,
                 COURSES_EDIT_FILES.identifier,
                 course_key,
