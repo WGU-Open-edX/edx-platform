@@ -119,18 +119,15 @@ def _authz_enforce_file_permissions(request, course_key):
     if enable_authz_course_authoring(course_key):
         # Check create, edit and delete permissions for AuthZ-enabled courses.
         if request.method in ('PUT', 'POST'):
-            # When we get a PUT or POST that includes a file, it's a create.
-            if 'file' in request.FILES and not user_has_course_permission(
+            permission = (
+                COURSES_CREATE_FILES.identifier
+                if 'file' in request.FILES
+                else COURSES_EDIT_FILES.identifier
+            )
+        
+            if not user_has_course_permission(
                 request.user,
-                COURSES_CREATE_FILES.identifier,
-                course_key,
-                LegacyAuthoringPermission.WRITE
-            ):
-                raise PermissionDenied()
-            # When we get a PUT or POST and no file, it's an edit
-            if request.method in ('PUT', 'POST') and not user_has_course_permission(
-                request.user,
-                COURSES_EDIT_FILES.identifier,
+                permission,
                 course_key,
                 LegacyAuthoringPermission.WRITE
             ):
