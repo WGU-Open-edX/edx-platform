@@ -98,6 +98,7 @@ def handle_assets(request, course_key_string=None, asset_key_string=None):
 
     return HttpResponseNotFound()
 
+
 def _authz_enforce_file_permissions(request, course_key):
     """
     Enforce permissions for file operations in asset handler.
@@ -105,7 +106,7 @@ def _authz_enforce_file_permissions(request, course_key):
     This function enforces the appropiate file permission depending on request content.
     When the flag is disabled, it enforces the legacy has_studio_write_access permission.
     """
-    # Enforce permisison to view files.
+    # Enforce permission to view files.
     # This is the minimum permission needed for handling assets.
     if not user_has_course_permission(
         request.user,
@@ -117,23 +118,24 @@ def _authz_enforce_file_permissions(request, course_key):
 
     if enable_authz_course_authoring(course_key):
         # Check create, edit and delete permissions for AuthZ-enabled courses.
-        # When we get a PUT or POST that includes a file, it's a create.
-        if request.method in ('PUT', 'POST') and 'file' in request.FILES and not user_has_course_permission(
-            request.user,
-            COURSES_CREATE_FILES.identifier,
-            course_key,
-            LegacyAuthoringPermission.WRITE
-        ):
-            raise PermissionDenied()
-        # When we get a PUT or POST and no file, it's an edit
-        if request.method in ('PUT', 'POST') and not user_has_course_permission(
-            request.user,
-            COURSES_EDIT_FILES.identifier,
-            course_key,
-            LegacyAuthoringPermission.WRITE
-        ):
-            raise PermissionDenied()
-
+        if request.method in ('PUT', 'POST'):
+            # When we get a PUT or POST that includes a file, it's a create.
+            if 'file' in request.FILES and not user_has_course_permission(
+                request.user,
+                COURSES_CREATE_FILES.identifier,
+                course_key,
+                LegacyAuthoringPermission.WRITE
+            ):
+                raise PermissionDenied()
+            # When we get a PUT or POST and no file, it's an edit
+            elif request.method in ('PUT', 'POST') and not user_has_course_permission(
+                request.user,
+                COURSES_EDIT_FILES.identifier,
+                course_key,
+                LegacyAuthoringPermission.WRITE
+            ):
+                raise PermissionDenied()
+        
         if request.method == 'DELETE' and not user_has_course_permission(
             request.user,
             COURSES_DELETE_FILES.identifier,
@@ -141,6 +143,7 @@ def _authz_enforce_file_permissions(request, course_key):
             LegacyAuthoringPermission.WRITE
         ):
             raise PermissionDenied()
+
 
 def get_asset_usage_path_json(request, course_key, asset_key_string):
     """

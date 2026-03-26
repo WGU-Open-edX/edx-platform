@@ -594,7 +594,7 @@ class DeleteAssetTestCase(AssetsTestCase):
         self.assertEqual(resp.status_code, 204)
 
 
-class AuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
+class AssetsEndpointsAuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
     """
     Unit tests for validating authorization on Assets endpoints when AuthZ is enabled.
     """
@@ -657,13 +657,11 @@ class AuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
 
         # PUT assets_handler forbidden
         resp = self._put_asset(client)
-        if resp is not None:
-            self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 403)
 
         # DELETE assets_handler forbidden
         resp = self._delete_asset(client)
-        if resp is not None:
-            self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 403)
 
     def test_editor_permissions(self):
         """Editor: read/create/edit allowed, delete forbidden."""
@@ -686,13 +684,11 @@ class AuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
 
         # PUT assets_handler allowed
         resp = self._put_asset(client)
-        if resp is not None:
-            self.assertIn(resp.status_code, [200, 201])
+        self.assertIn(resp.status_code, [200, 201])
 
         # DELETE assets_handler forbidden
         resp = self._delete_asset(client)
-        if resp is not None:
-            self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 403)
 
     def test_admin_permissions(self):
         """Admin: full access."""
@@ -715,13 +711,11 @@ class AuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
 
         # PUT assets_handler allowed
         resp = self._put_asset(client)
-        if resp is not None:
-            self.assertIn(resp.status_code, [200, 201])
+        self.assertIn(resp.status_code, [200, 201])
 
         # DELETE assets_handler allowed
         resp = self._delete_asset(client)
-        if resp is not None:
-            self.assertEqual(resp.status_code, 204)
+        self.assertEqual(resp.status_code, 204)
 
     def test_no_role_permissions(self):
         """No role: all forbidden."""
@@ -743,10 +737,8 @@ class AuthzTestCase(CourseAuthzTestMixin, AssetsTestCase):
 
         # PUT assets_handler forbidden
         resp = self._put_asset(client)
-        if resp is not None:
-            self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 403)
 
         # DELETE assets_handler forbidden
         resp = self._delete_asset(client)
-        if resp is not None:
-            self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 403)
