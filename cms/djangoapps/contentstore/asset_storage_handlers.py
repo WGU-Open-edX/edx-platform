@@ -103,7 +103,7 @@ def _authz_enforce_file_permissions(request, course_key):
     """
     Enforce permissions for file operations in asset handler.
     When the authz.enable_course_authoring flag is enabled for the specified course,
-    This function enforces the appropiate file permission depending on request content.
+    This function enforces the appropriate file permission depending on request content.
     When the flag is disabled, it enforces the legacy has_studio_write_access permission.
     """
     # Enforce permission to view files.
