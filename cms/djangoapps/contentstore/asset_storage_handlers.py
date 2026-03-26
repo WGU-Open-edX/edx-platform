@@ -124,7 +124,7 @@ def _authz_enforce_file_permissions(request, course_key):
                 if 'file' in request.FILES
                 else COURSES_EDIT_FILES.identifier
             )
-        
+
             if not user_has_course_permission(
                 request.user,
                 permission,
