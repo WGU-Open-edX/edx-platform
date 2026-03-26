@@ -1712,9 +1712,9 @@ class ExportOutputAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
     @patch('cms.djangoapps.contentstore.views.import_export.course_import_export_storage')
     def test_superuser_allowed(
         self,
-        mock_get_user_task_artifact,
-        mock_latest_task_status,
         mock_storage,
+        mock_latest_task_status,
+        mock_get_user_task_artifact,
     ):
         """Superusers should always be allowed."""
         mock_latest_task_status.return_value = Mock(state=UserTaskStatus.SUCCEEDED)

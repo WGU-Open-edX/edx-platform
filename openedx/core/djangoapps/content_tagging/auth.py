@@ -26,13 +26,12 @@ def has_view_object_tags_access(user, object_id):
     try:
         course_key = CourseKey.from_string(object_id)
     except InvalidKeyError:
-        log.warning("Invalid course key %s", object_id)
+        pass
 
-    if course_key and core_toggles.enable_authz_course_authoring(course_key) and not authz_api.is_user_allowed(
-        user.username, COURSES_EXPORT_TAGS.identifier, str(course_key)
-    ):
-        return False
-
+    if course_key and core_toggles.enable_authz_course_authoring(course_key):
+        return authz_api.is_user_allowed(
+            user.username, COURSES_EXPORT_TAGS.identifier, str(course_key)
+        )
 
     # Always check for tagging permissions
     return user.has_perm(
