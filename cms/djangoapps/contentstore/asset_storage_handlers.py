@@ -135,7 +135,7 @@ def _authz_enforce_file_permissions(request, course_key):
                 LegacyAuthoringPermission.WRITE
             ):
                 raise PermissionDenied()
-        
+
         if request.method == 'DELETE' and not user_has_course_permission(
             request.user,
             COURSES_DELETE_FILES.identifier,
