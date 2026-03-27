@@ -36,10 +36,7 @@ from organizations.api import add_organization_course, ensure_organization
 from organizations.exceptions import InvalidOrganizationException
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import api_view
-from openedx.core.djangoapps.authz.constants import LegacyAuthoringPermission
-from openedx.core.djangoapps.authz.decorators import user_has_course_permission
 from openedx.core.lib.api.view_utils import view_auth_classes
-from openedx_authz.constants.permissions import COURSES_MANAGE_GROUP_CONFIGURATIONS
 
 from cms.djangoapps.contentstore.xblock_storage_handlers.view_handlers import create_xblock_info
 from cms.djangoapps.course_creators.views import add_user_with_status_unrequested, get_course_creator_status
@@ -61,7 +58,11 @@ from common.djangoapps.student.auth import (
 )
 from openedx.core.djangoapps.authz.constants import LegacyAuthoringPermission
 from openedx.core.djangoapps.authz.decorators import user_has_course_permission
-from openedx_authz.constants.permissions import COURSES_MANAGE_COURSE_UPDATES, COURSES_VIEW_COURSE_UPDATES
+from openedx_authz.constants.permissions import (
+    COURSES_MANAGE_COURSE_UPDATES,
+    COURSES_VIEW_COURSE_UPDATES,
+    COURSES_MANAGE_GROUP_CONFIGURATIONS,
+)
 from common.djangoapps.student.roles import (
     CourseInstructorRole,
     CourseStaffRole,
