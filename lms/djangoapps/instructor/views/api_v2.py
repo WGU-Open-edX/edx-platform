@@ -1592,7 +1592,7 @@ class CertificateConfigView(DeveloperErrorViewMixin, APIView):
         * 404: Not Found - Course does not exist
     """
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
-    permission_name = permissions.VIEW_DASHBOARD
+    permission_name = permissions.VIEW_ISSUED_CERTIFICATES
 
     @apidocs.schema(
         parameters=[
