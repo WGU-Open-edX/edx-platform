@@ -1169,7 +1169,7 @@ class IssuedCertificatesView(ListAPIView):
         * 404: Not Found - Course does not exist
     """
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
-    permission_name = permissions.VIEW_DASHBOARD
+    permission_name = permissions.VIEW_ISSUED_CERTIFICATES
     serializer_class = IssuedCertificateSerializer
 
     def _apply_certificate_status_filter(self, certificates, filter_type, cert_statuses):
