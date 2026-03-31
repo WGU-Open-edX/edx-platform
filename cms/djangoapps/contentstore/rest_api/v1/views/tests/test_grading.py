@@ -185,9 +185,8 @@ class CourseGradingViewAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
 
     def test_non_staff_user_cannot_access_get(self):
         """
-        User without permissions should be denied.
-        This case validates that a non-staff user cannot access even
-        if they have course author access to the course.
+        User without required permissions should be denied.
+        This case validates that a non-staff user doesn't get access.
         """
         non_staff_user = UserFactory()
         non_staff_client = APIClient()
@@ -255,9 +254,8 @@ class CourseGradingViewAuthzTest(CourseAuthzTestMixin, BaseCourseViewTest):
 
     def test_non_staff_user_cannot_access_post(self):
         """
-        User without permissions should be denied.
-        This case validates that a non-staff user cannot access even
-        if they have course author access to the course.
+        User without required permissions should be denied.
+        This case validates that a non-staff user doesn't get access.
         """
         non_staff_user = UserFactory()
         non_staff_client = APIClient()
