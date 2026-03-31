@@ -549,11 +549,20 @@ class RegenerateCertificatesSerializer(serializers.Serializer):
     Serializer for regenerating certificates request.
     """
     statuses = serializers.ListField(
-        child=serializers.CharField(),
+        child=serializers.ChoiceField(
+            choices=[
+                'deleted', 'deleting', 'downloadable', 'error', 'generating',
+                'notpassing', 'restricted', 'unavailable', 'auditing',
+                'audit_passing', 'audit_notpassing', 'honor_passing',
+                'unverified', 'invalidated', 'requesting'
+            ]
+        ),
         required=False,
         help_text="Certificate statuses to regenerate"
     )
-    student_set = serializers.CharField(
+    student_set = serializers.ChoiceField(
+        choices=['all', 'allowlisted'],
         required=False,
-        help_text="Student set filter (e.g., 'all', 'allowlisted')"
+        default='all',
+        help_text="Student set filter"
     )

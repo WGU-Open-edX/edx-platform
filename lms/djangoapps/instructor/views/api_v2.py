@@ -1278,8 +1278,8 @@ class IssuedCertificatesView(ListAPIView):
 
         # Debug logging
         log.debug(
-            f"Certificate query for course {course_key}: "
-            f"found {certificates.count()} certificates, filter_type: {filter_type}"
+            "Certificate query for course %s: filter_type: %s",
+            course_key, filter_type
         )
 
         # Apply filter based on filter type
@@ -1385,7 +1385,7 @@ class CertificateGenerationHistoryView(ListAPIView):
         * 404: Not Found - Course does not exist
     """
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
-    permission_name = permissions.VIEW_DASHBOARD
+    permission_name = permissions.VIEW_ISSUED_CERTIFICATES
     serializer_class = CertificateGenerationHistorySerializer
 
     def get_queryset(self):
@@ -1494,7 +1494,7 @@ class RegenerateCertificatesView(DeveloperErrorViewMixin, APIView):
         * 404: Not Found - Course does not exist
     """
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
-    permission_name = permissions.GIVE_STUDENT_EXTENSION
+    permission_name = permissions.START_CERTIFICATE_REGENERATION
 
     @apidocs.schema(
         parameters=[
