@@ -3,14 +3,16 @@ Tests for Instructor API v2 GET endpoints.
 """
 import json
 from uuid import uuid4
+
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
+
 from common.djangoapps.student.tests.factories import InstructorFactory, UserFactory
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor_task.models import InstructorTask
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
-from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory
+from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
 
 
 class LearnerViewTestCase(ModuleStoreTestCase):
