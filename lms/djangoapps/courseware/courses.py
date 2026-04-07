@@ -69,6 +69,7 @@ from openedx.core.djangoapps.site_configuration import helpers as configuration_
 from openedx.core.lib.api.view_utils import LazySequence
 from openedx.core.lib.cache_utils import request_cached
 from openedx.core.lib.courses import get_course_by_id
+from openedx.core import toggles as core_toggles
 from openedx.features.course_duration_limits.access import AuditExpiredError
 from openedx.features.course_experience import RELATIVE_DATES_FLAG
 from openedx.features.course_experience.utils import is_block_structure_complete_for_assignments
@@ -214,6 +215,10 @@ def check_course_access(
         return access_response
 
     non_staff_access_response = _check_nonstaff_access()
+    if core_toggles.enable_authz_course_authoring(course.id):
+         # If AuthZ is enabled for this course, it checks already
+         # permissions for staff.
+         return non_staff_access_response
 
     # User has course access OR access error is a priority error
     if non_staff_access_response or is_priority_access_error(non_staff_access_response):
