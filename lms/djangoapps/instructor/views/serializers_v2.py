@@ -26,6 +26,7 @@ from lms.djangoapps.certificates.models import CertificateGenerationConfiguratio
 from lms.djangoapps.courseware.access import has_access
 from lms.djangoapps.courseware.courses import get_studio_url
 from lms.djangoapps.discussion.django_comment_client.utils import has_forum_access
+from lms.djangoapps.grades.api import is_writable_gradebook_enabled
 from lms.djangoapps.instructor import permissions
 from lms.djangoapps.instructor.views.instructor_dashboard import get_analytics_dashboard_message
 from openedx.core.djangoapps.django_comment_common.models import FORUM_ROLE_ADMINISTRATOR
@@ -442,7 +443,7 @@ class CourseInformationSerializerV2(serializers.Serializer):
     def get_gradebook_url(self, data):
         """Get MFE gradebook URL for the course."""
         course_key = data['course'].id
-        if settings.WRITABLE_GRADEBOOK_URL:
+        if is_writable_gradebook_enabled(course_key) and settings.WRITABLE_GRADEBOOK_URL:
             return f'{settings.WRITABLE_GRADEBOOK_URL}/gradebook/{course_key}'
         return None
 
@@ -625,7 +626,7 @@ class LearnerSerializer(serializers.Serializer):
     full_name = serializers.CharField(
         help_text="Learner's full name from their Open edX profile"
     )
-    progress_url = serializers.URLField(
+    progress_url = serializers.CharField(
         allow_null=True,
         required=False,
         help_text="URL to learner's progress page"

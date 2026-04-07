@@ -1353,32 +1353,29 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
 
         try:
             problem = store.get_item(problem_key)
-        except Exception:  # pylint: disable=broad-except
+        except ItemNotFoundError:
             return Response(
                 {'error': 'Problem not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Build breadcrumbs
+        # Build breadcrumbs by walking up the parent chain
         breadcrumbs = []
         current = problem
         while current:
             breadcrumbs.insert(0, {
                 'display_name': current.display_name,
-                'usage_key': str(current.location) if current.location != course_key else None
+                'usage_key': str(current.location) if current.location.block_type != 'course' else None
             })
-            parent_location = current.get_parent() if hasattr(current, 'get_parent') else None
-            if not parent_location:
+            parent = current.get_parent() if hasattr(current, 'get_parent') else None
+            if not parent:
                 break
-            try:
-                current = store.get_item(parent_location)
-            except Exception:  # pylint: disable=broad-except
-                break
+            current = parent
 
         problem_data = {
             'id': str(problem.location),
             'name': problem.display_name,
-            'breadcrumbs': [b for b in breadcrumbs if b.get('usage_key') is not None or breadcrumbs.index(b) == 0],
+            'breadcrumbs': breadcrumbs,
             'current_score': None,
             'attempts': None,
         }
@@ -1415,10 +1412,7 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
                     'total': problem.max_attempts,
                 }
             except StudentModule.DoesNotExist:
-                return Response(
-                    {'error': 'Learner has not attempted this problem'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                pass  # Leave current_score and attempts as None
 
         serializer = ProblemSerializer(problem_data)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -1494,10 +1488,15 @@ class TaskStatusView(DeveloperErrorViewMixin, APIView):
         # Map task state
         state_map = {
             'PENDING': 'pending',
+            'QUEUING': 'pending',
+            'SCHEDULED': 'pending',
+            'RECEIVED': 'pending',
+            'STARTED': 'running',
             'PROGRESS': 'running',
+            'RETRY': 'running',
             'SUCCESS': 'completed',
             'FAILURE': 'failed',
-            'REVOKED': 'failed'
+            'REVOKED': 'failed',
         }
 
         task_data = {

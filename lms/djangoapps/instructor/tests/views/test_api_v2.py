@@ -128,7 +128,7 @@ class ProblemViewTestCase(ModuleStoreTestCase):
         self.assertIsInstance(data['breadcrumbs'], list)
 
     def test_get_problem_with_breadcrumbs(self):
-        """Test that breadcrumbs are included in response"""
+        """Test that breadcrumbs contain the full course hierarchy"""
         url = reverse('instructor_api_v2:problem_detail', kwargs={
             'course_id': str(self.course.id),
             'location': str(self.problem.location)
@@ -139,11 +139,13 @@ class ProblemViewTestCase(ModuleStoreTestCase):
         data = response.json()
         breadcrumbs = data['breadcrumbs']
 
-        # Should have at least the problem itself
-        self.assertGreater(len(breadcrumbs), 0)
-        # Check that breadcrumb items have required fields
-        for crumb in breadcrumbs:
-            self.assertIn('display_name', crumb)
+        # Should contain: course → chapter → sequential → problem
+        self.assertEqual(len(breadcrumbs), 4)
+        self.assertEqual(breadcrumbs[0]['display_name'], self.course.display_name)
+        self.assertIsNone(breadcrumbs[0]['usage_key'])  # course-level has no usage_key
+        self.assertEqual(breadcrumbs[1]['display_name'], 'Week 1')
+        self.assertEqual(breadcrumbs[2]['display_name'], 'Homework 1')
+        self.assertEqual(breadcrumbs[3]['display_name'], 'Sample Problem')
 
     def test_get_problem_invalid_location(self):
         """Test 400 with invalid problem location"""
@@ -194,8 +196,8 @@ class ProblemViewTestCase(ModuleStoreTestCase):
         self.assertEqual(data['current_score']['total'], 10.0)
         self.assertEqual(data['attempts']['current'], 3)
 
-    def test_get_problem_with_learner_no_submission_returns_404(self):
-        """Test that 404 is returned when learner has no StudentModule for the problem"""
+    def test_get_problem_with_learner_no_submission_returns_nulls(self):
+        """Test that current_score and attempts are null when learner has no StudentModule"""
         student = UserFactory()
         url = reverse('instructor_api_v2:problem_detail', kwargs={
             'course_id': str(self.course.id),
@@ -203,8 +205,10 @@ class ProblemViewTestCase(ModuleStoreTestCase):
         })
         response = self.client.get(url, {'email_or_username': student.username})
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn('error', response.json())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIsNone(data['current_score'])
+        self.assertIsNone(data['attempts'])
 
     def test_get_problem_with_unknown_learner_returns_404(self):
         """Test that a 404 is returned when learner does not exist"""
