@@ -1979,19 +1979,19 @@ class TestObjectTagViewSet(TestObjectTagMixin, APITestCase):
         assert response.data[str(object_id_2)]["taxonomies"] == expected_tags
 
     @ddt.data(
-        ('staff', 'courseA', 8),
+        ('staff', 'courseA', 10),
         ('staff', 'libraryA', 17),
         ('staff', 'collection_key', 17),
-        ("content_creatorA", 'courseA', 18, False),
+        ("content_creatorA", 'courseA', 20, False),
         ("content_creatorA", 'libraryA', 23, False),
         ("content_creatorA", 'collection_key', 23, False),
         ("library_staffA", 'libraryA', 23, False),  # Library users can only view objecttags, not change them?
         ("library_staffA", 'collection_key', 23, False),
         ("library_userA", 'libraryA', 23, False),
         ("library_userA", 'collection_key', 23, False),
-        ("instructorA", 'courseA', 18),
-        ("course_instructorA", 'courseA', 18),
-        ("course_staffA", 'courseA', 18),
+        ("instructorA", 'courseA', 20),
+        ("course_instructorA", 'courseA', 20),
+        ("course_staffA", 'courseA', 20),
     )
     @ddt.unpack
     def test_object_tags_query_count(
@@ -2135,6 +2135,112 @@ class TestContentObjectChildrenExportViewWithAuthz(CourseAuthzTestMixin, SharedM
         client.force_authenticate(user=superuser)
         resp = client.get(self.get_url(self.course_key))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)  # noqa: PT009
+
+@skip_unless_cms
+class TestObjectTagUpdateWithAuthz(CourseAuthzTestMixin, SharedModuleStoreTestCase, APITestCase):
+    """
+    Tests object tag endpoints with openedx-authz.
+
+    When the AUTHZ_COURSE_AUTHORING_FLAG is enabled for a course,
+    PUT /object_tags/{object_id}/ should enforce courses.manage_tags,
+    and GET /object_tags/{object_id}/ should return authz-aware
+    can_tag_object values.
+
+    When authz is active, the parent's legacy permission checks
+    (ObjectTagObjectPermissions and per-taxonomy can_tag_object) are
+    bypassed entirely — permissions are enforced solely via openedx-authz.
+    """
+
+    authz_roles_to_assign = [COURSE_STAFF.external_key]
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.password = 'test'
+        cls.course = CourseFactory.create()
+        cls.course_key = cls.course.id
+        cls.staff = StaffFactory(course_key=cls.course_key, password=cls.password)
+
+    def setUp(self):
+        super().setUp()
+        self.taxonomy = tagging_api.create_taxonomy(name="Test Taxonomy")
+        tagging_api.set_taxonomy_orgs(self.taxonomy, all_orgs=True, orgs=[])
+        Tag.objects.create(taxonomy=self.taxonomy, value="Tag 1")
+
+    def _put_tags(self, client):
+        """Helper to PUT tags on the course."""
+        url = OBJECT_TAG_UPDATE_URL.format(object_id=self.course_key)
+        return client.put(
+            url,
+            {"tagsData": [{"taxonomy": self.taxonomy.id, "tags": ["Tag 1"]}]},
+            format="json",
+        )
+
+    def _make_auditor_client(self, course_key=None):
+        """
+        Create a user with authz course_auditor role (no manage_tags permission).
+        Since get_permissions() replaces legacy checks with IsAuthenticated when
+        authz is active, no legacy role is needed to pass dispatch.
+        """
+        from openedx_authz.constants.roles import COURSE_AUDITOR  # pylint: disable=import-outside-toplevel
+
+        course_key = course_key or self.course_key
+        auditor = UserFactory(password=self.password)
+        self.add_user_to_role_in_course(auditor, COURSE_AUDITOR.external_key, course_key)
+        client = APIClient()
+        client.force_authenticate(user=auditor)
+        return client
+
+    def test_update_object_tags_authorized(self):
+        """Authorized user can update object tags."""
+        assert self._put_tags(self.authorized_client).status_code == status.HTTP_200_OK
+
+    def test_update_object_tags_denied_by_authz(self):
+        """User with legacy access but no authz manage_tags is denied."""
+        auditor_client = self._make_auditor_client()
+        assert self._put_tags(auditor_client).status_code == status.HTTP_403_FORBIDDEN
+
+    def test_update_object_tags_scoped_to_course(self):
+        """Authorized user for one course cannot tag objects in another course."""
+        other_course = self.store.create_course("OtherOrg", "OtherCourse", "Run", self.staff.id)
+        url = OBJECT_TAG_UPDATE_URL.format(object_id=other_course.id)
+        resp = self.authorized_client.put(
+            url,
+            {"tagsData": [{"taxonomy": self.taxonomy.id, "tags": ["Tag 1"]}]},
+            format="json",
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_superuser_allowed(self):
+        """Superusers should always be allowed."""
+        superuser = UserFactory(is_superuser=True)
+        client = APIClient()
+        client.force_authenticate(user=superuser)
+        assert self._put_tags(client).status_code == status.HTTP_200_OK
+
+    def test_retrieve_can_tag_object_authorized(self):
+        """Authorized user sees can_tag_object=true and can_delete_objecttag=true."""
+        self._put_tags(self.authorized_client)  # ensure tags exist
+        url = OBJECT_TAGS_URL.format(object_id=self.course_key)
+        resp = self.authorized_client.get(url)
+        assert resp.status_code == status.HTTP_200_OK
+        for taxonomy_entry in resp.data[str(self.course_key)]["taxonomies"]:
+            assert taxonomy_entry["can_tag_object"] is True
+            for tag in taxonomy_entry["tags"]:
+                assert tag["can_delete_objecttag"] is True
+
+    def test_retrieve_can_tag_object_denied(self):
+        """User sees can_tag_object=false and can_delete_objecttag=false when authz denies manage_tags."""
+        auditor_client = self._make_auditor_client()
+        self._put_tags(self.authorized_client)  # ensure tags exist
+        url = OBJECT_TAGS_URL.format(object_id=self.course_key)
+        resp = auditor_client.get(url)
+        assert resp.status_code == status.HTTP_200_OK
+        for taxonomy_entry in resp.data[str(self.course_key)]["taxonomies"]:
+            assert taxonomy_entry["can_tag_object"] is False
+            for tag in taxonomy_entry["tags"]:
+                assert tag["can_delete_objecttag"] is False
+
 
 @skip_unless_cms
 @ddt.ddt

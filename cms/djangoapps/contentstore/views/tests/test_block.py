@@ -19,10 +19,12 @@ from opaque_keys import InvalidKeyError
 from opaque_keys.edx.asides import AsideUsageKeyV2
 from opaque_keys.edx.keys import CourseKey, UsageKey
 from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator
+from openedx_authz.constants.roles import COURSE_STAFF
 from openedx_events.content_authoring.data import DuplicatedXBlockData
 from openedx_events.content_authoring.signals import XBLOCK_DUPLICATED
 from openedx_events.testing import OpenEdxEventsTestMixin
 from pytz import UTC
+from rest_framework.test import APITestCase
 from web_fragments.fragment import Fragment
 from webob import Response
 from xblock.core import XBlockAside
@@ -54,14 +56,20 @@ from common.djangoapps.xblock_django.models import (
 from common.djangoapps.xblock_django.user_service import DjangoXBlockUserService
 from common.test.utils import assert_dict_contains_subset
 from lms.djangoapps.lms_xblock.mixin import NONSENSICAL_ACCESS_RESTRICTION
+from openedx.core.djangoapps.authz.tests.mixins import CourseAuthzTestMixin
 from openedx.core.djangoapps.content_tagging import api as tagging_api
 from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration
 from openedx.core.djangoapps.video_config.toggles import PUBLIC_VIDEO_SHARE
+from openedx.core.djangolib.testing.utils import skip_unless_cms
 from xmodule.course_block import DEFAULT_START_DATE
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
-from xmodule.modulestore.tests.django_utils import TEST_DATA_SPLIT_MODULESTORE, ModuleStoreTestCase
+from xmodule.modulestore.tests.django_utils import (
+    TEST_DATA_SPLIT_MODULESTORE,
+    ModuleStoreTestCase,
+    SharedModuleStoreTestCase,
+)
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory, LibraryFactory, check_mongo_calls
 from xmodule.partitions.partitions import (
     ENROLLMENT_TRACK_PARTITION_ID,
@@ -4615,3 +4623,60 @@ class TestXblockEditView(CourseTestCase):
 
         self.assertGreater(len(resource_links), 0, f"No CSS resources found in HTML. Found: {resource_links}")  # noqa: PT009  # pylint: disable=line-too-long
         self.assertGreater(len(script_sources), 0, f"No JS resources found in HTML. Found: {script_sources}")  # noqa: PT009  # pylint: disable=line-too-long
+
+
+
+@skip_unless_cms
+class XBlockOutlineHandlerAuthzTest(CourseAuthzTestMixin, SharedModuleStoreTestCase, APITestCase):
+    """
+    Tests xblock_outline_handler authorization via openedx-authz.
+
+    When the AUTHZ_COURSE_AUTHORING_FLAG is enabled, the endpoint should
+    enforce courses.view_course via openedx-authz instead of legacy
+    has_studio_read_access.
+    """
+
+    authz_roles_to_assign = [COURSE_STAFF.external_key]
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.password = 'test'
+        cls.course = CourseFactory.create()
+        cls.course_key = cls.course.id
+        cls.staff = StaffFactory(course_key=cls.course_key, password=cls.password)
+        cls.chapter = BlockFactory.create(
+            parent_location=cls.course.location,
+            category="chapter",
+            display_name="Week 1",
+            user_id=cls.staff.id,
+        )
+
+    def _get_outline_url(self):
+        return reverse_usage_url("xblock_outline_handler", self.chapter.location)
+
+    def test_authorized_user_can_access(self):
+        """User with COURSE_STAFF role can access."""
+        self.authorized_client.login(username=self.authorized_user.username, password=self.password)
+        resp = self.authorized_client.get(self._get_outline_url(), HTTP_ACCEPT="application/json")
+        assert resp.status_code == 200
+
+    def test_unauthorized_user_cannot_access(self):
+        """User without role cannot access."""
+        self.unauthorized_client.login(username=self.unauthorized_user.username, password=self.password)
+        resp = self.unauthorized_client.get(self._get_outline_url(), HTTP_ACCEPT="application/json")
+        assert resp.status_code == 403
+
+    def test_role_scoped_to_course(self):
+        """Authorization should only apply to the assigned course."""
+        other_course = self.store.create_course("OtherOrg", "OtherCourse", "Run", self.staff.id)
+        other_chapter = BlockFactory.create(
+            parent_location=other_course.location,
+            category="chapter",
+            display_name="Other Week",
+            user_id=self.staff.id,
+        )
+        url = reverse_usage_url("xblock_outline_handler", other_chapter.location)
+        self.authorized_client.login(username=self.authorized_user.username, password=self.password)
+        resp = self.authorized_client.get(url, HTTP_ACCEPT="application/json")
+        assert resp.status_code == 403
