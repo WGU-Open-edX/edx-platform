@@ -11,12 +11,12 @@ from django.contrib.auth.models import AnonymousUser
 from django.http import Http404
 from django.test import TestCase, override_settings
 from opaque_keys.edx.keys import CourseKey
+from openedx_authz.constants.roles import COURSE_EDITOR
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
-from lms.djangoapps.courseware.courseware_access_exception import CoursewareAccessException
-from openedx_authz.constants.roles import COURSE_EDITOR
 
+from lms.djangoapps.courseware.courseware_access_exception import CoursewareAccessException
 from openedx.core.djangoapps.authz.tests.mixins import CourseAuthoringAuthzTestMixin
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from xmodule.modulestore.exceptions import ItemNotFoundError  # lint-amnesty, pylint: disable=wrong-import-order

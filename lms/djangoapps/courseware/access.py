@@ -19,7 +19,6 @@ from django.contrib.auth.models import AnonymousUser
 from edx_django_utils.monitoring import function_trace
 from opaque_keys.edx.keys import CourseKey, UsageKey
 from openedx_authz.constants.permissions import COURSES_VIEW_COURSE
-from openedx.core.djangoapps.authz.decorators import user_has_course_permission
 from xblock.core import XBlock
 
 from common.djangoapps.student import auth
@@ -64,8 +63,9 @@ from lms.djangoapps.courseware.access_utils import (
 from lms.djangoapps.courseware.masquerade import get_masquerade_role, is_masquerading_as_student
 from lms.djangoapps.courseware.toggles import course_is_invitation_only
 from lms.djangoapps.mobile_api.models import IgnoreMobileAvailableFlagConfig
-from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core import toggles as core_toggles
+from openedx.core.djangoapps.authz.decorators import user_has_course_permission
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.features.course_duration_limits.access import check_course_expired
 from xmodule.course_block import (  # lint-amnesty, pylint: disable=wrong-import-order
     CATALOG_VISIBILITY_ABOUT,

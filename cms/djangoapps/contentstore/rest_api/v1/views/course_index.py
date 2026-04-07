@@ -5,12 +5,11 @@ import logging
 import edx_api_doc_tools as apidocs
 from django.conf import settings
 from opaque_keys.edx.keys import CourseKey
+from openedx_authz.constants.permissions import COURSES_VIEW_COURSE
 from rest_framework.fields import BooleanField
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from openedx_authz.constants.permissions import COURSES_VIEW_COURSE
 
 from cms.djangoapps.contentstore.config.waffle import CUSTOM_RELATIVE_DATES
 from cms.djangoapps.contentstore.rest_api.v1.mixins import ContainerHandlerMixin

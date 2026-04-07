@@ -8,13 +8,13 @@ from unittest.mock import MagicMock, patch
 import ddt
 from django.conf import settings
 from django.urls import reverse
-from rest_framework import status
 from freezegun import freeze_time
 from opaque_keys.edx.keys import ContainerKey, UsageKey
 from opaque_keys.edx.locator import LibraryLocatorV2, LibraryUsageLocatorV2
+from openedx_authz.constants.roles import COURSE_EDITOR
 from openedx_content import models_api as content_models
 from organizations.models import Organization
-from openedx_authz.constants.roles import COURSE_EDITOR
+from rest_framework import status
 
 from cms.djangoapps.contentstore.helpers import StaticFileNotices
 from cms.djangoapps.contentstore.tests.utils import CourseTestCase
@@ -24,8 +24,8 @@ from cms.lib.xblock.upstream_sync import BadUpstream, UpstreamLink
 from common.djangoapps.student.auth import add_users
 from common.djangoapps.student.roles import CourseStaffRole
 from common.djangoapps.student.tests.factories import UserFactory
-from openedx.core.djangoapps.content_libraries import api as lib_api
 from openedx.core.djangoapps.authz.tests.mixins import CourseAuthoringAuthzTestMixin
+from openedx.core.djangoapps.content_libraries import api as lib_api
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import ImmediateOnCommitMixin, SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
