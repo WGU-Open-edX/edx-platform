@@ -85,6 +85,8 @@ v2_api_urls = [
         rf'^courses/{COURSE_ID_PATTERN}/certificates/config$',
         api_v2.CertificateConfigView.as_view(),
         name='certificate_config'
+    ),
+    re_path(
         rf'^courses/{COURSE_ID_PATTERN}/enrollments$',
         api_v2.CourseEnrollmentsView.as_view(),
         name='course_enrollments'
