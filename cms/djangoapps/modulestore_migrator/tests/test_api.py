@@ -2,10 +2,12 @@
 Test cases for the modulestore migrator API.
 """
 
-import pytest
 from unittest.mock import patch
-from opaque_keys.edx.locator import LibraryLocator, LibraryLocatorV2, CourseLocator
+
+import pytest
+from opaque_keys.edx.locator import CourseLocator, LibraryLocator, LibraryLocatorV2
 from openedx_content import api as content_api
+from openedx_content import models_api as content_models
 from organizations.tests.factories import OrganizationFactory
 
 from cms.djangoapps.modulestore_migrator import api
@@ -14,9 +16,8 @@ from cms.djangoapps.modulestore_migrator.models import ModulestoreMigration
 from cms.djangoapps.modulestore_migrator.tests.factories import ModulestoreSourceFactory
 from common.djangoapps.student.tests.factories import UserFactory
 from openedx.core.djangoapps.content_libraries import api as lib_api
-
-from xmodule.modulestore.tests.utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, LibraryFactory
+from xmodule.modulestore.tests.utils import ModuleStoreTestCase
 
 
 @pytest.mark.django_db
@@ -147,6 +148,11 @@ class TestModulestoreMigratorAPI(ModuleStoreTestCase):
                 parent_location=self.lib_key_v1_3.make_usage_key("vertical", "X"),
                 user_id=self.user.id, publish_item=False,
             )
+
+    def tearDown(self):
+        # If we're working with Containers in test cases, we need this line:
+        content_models.Container.reset_cache()
+        return super().tearDown()
 
     def test_start_migration_to_library(self):
         """

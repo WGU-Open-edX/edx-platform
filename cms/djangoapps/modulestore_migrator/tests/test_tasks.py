@@ -10,16 +10,13 @@ from lxml import etree
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locator import LibraryLocator, LibraryLocatorV2
 from openedx_content import api as content_api
-from openedx_content.models_api import Collection, PublishableEntityVersion
+from openedx_content.models_api import Collection, Container, PublishableEntityVersion, Section, Subsection, Unit
 from organizations.tests.factories import OrganizationFactory
 from user_tasks.models import UserTaskArtifact
 from user_tasks.tasks import UserTaskStatus
 
 from cms.djangoapps.modulestore_migrator.data import CompositionLevel, RepeatHandlingStrategy
-from cms.djangoapps.modulestore_migrator.models import (
-    ModulestoreMigration,
-    ModulestoreSource,
-)
+from cms.djangoapps.modulestore_migrator.models import ModulestoreMigration, ModulestoreSource
 from cms.djangoapps.modulestore_migrator.tasks import (
     MigrationStep,
     _BulkMigrationTask,
@@ -33,7 +30,7 @@ from cms.djangoapps.modulestore_migrator.tasks import (
 from common.djangoapps.student.tests.factories import UserFactory
 from openedx.core.djangoapps.content_libraries import api as lib_api
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
-from xmodule.modulestore.tests.factories import CourseFactory, LibraryFactory, BlockFactory
+from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory, LibraryFactory
 
 from .. import api as migrator_api
 
@@ -100,6 +97,11 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
             key="test_collection2",
             title="Test Collection 2",
         )
+
+    def tearDown(self):
+        # If we're working with Containers in test cases, we need this line:
+        Container.reset_cache()
+        return super().tearDown()
 
     def _make_migration_context(self, **kwargs) -> _MigrationContext:
         """
@@ -752,7 +754,7 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
         result, reason = _migrate_container(
             context=context,
             source_key=source_key,
-            container_type=lib_api.ContainerType.Unit,
+            container_cls=Unit,
             title="Test Vertical",
             children=children,
         )
@@ -775,14 +777,14 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
         Test _migrate_container works with different container types
         """
         container_types = [
-            (lib_api.ContainerType.Unit, "vertical"),
-            (lib_api.ContainerType.Subsection, "sequential"),
-            (lib_api.ContainerType.Section, "chapter"),
+            (Unit, "vertical"),
+            (Subsection, "sequential"),
+            (Section, "chapter"),
         ]
         context = self._make_migration_context(repeat_handling_strategy=RepeatHandlingStrategy.Skip)
 
-        for container_type, block_type in container_types:
-            with self.subTest(container_type=container_type, block_type=block_type):
+        for container_cls, block_type in container_types:
+            with self.subTest(container_cls=container_cls, block_type=block_type):
                 source_key = self.course.id.make_usage_key(
                     block_type, f"test_{block_type}"
                 )
@@ -790,7 +792,7 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
                 result, reason = _migrate_container(
                     context=context,
                     source_key=source_key,
-                    container_type=container_type,
+                    container_cls=container_cls,
                     title=f"Test {block_type.title()}",
                     children=[],
                 )
@@ -861,7 +863,7 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
         result, _ = _migrate_container(
             context=context,
             source_key=source_key,
-            container_type=lib_api.ContainerType.Unit,
+            container_cls=Unit,
             title="Library Vertical",
             children=[],
         )
@@ -880,7 +882,7 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
         result, reason = _migrate_container(
             context=context,
             source_key=source_key,
-            container_type=lib_api.ContainerType.Unit,
+            container_cls=Unit,
             title="Empty Vertical",
             children=[],
         )
@@ -919,7 +921,7 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
         result, _ = _migrate_container(
             context=context,
             source_key=source_key,
-            container_type=lib_api.ContainerType.Unit,
+            container_cls=Unit,
             title="Ordered Vertical",
             children=children,
         )
@@ -996,7 +998,7 @@ class TestMigrateFromModulestore(ModuleStoreTestCase):
         result, _ = _migrate_container(
             context=context,
             source_key=source_key,
-            container_type=lib_api.ContainerType.Unit,
+            container_cls=Unit,
             title="Mixed Content Vertical",
             children=children,
         )

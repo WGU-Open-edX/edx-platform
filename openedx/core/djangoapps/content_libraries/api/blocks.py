@@ -4,6 +4,7 @@ Content libraries API methods related to XBlocks/Components.
 These methods don't enforce permissions (only the REST APIs do).
 """
 from __future__ import annotations
+
 import logging
 import mimetypes
 from datetime import datetime, timezone
@@ -20,13 +21,15 @@ from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from lxml import etree
 from opaque_keys import InvalidKeyError
-from opaque_keys.edx.locator import LibraryContainerLocator, LibraryLocatorV2, LibraryUsageLocatorV2
 from opaque_keys.edx.keys import LearningContextKey, UsageKeyV2
+from opaque_keys.edx.locator import LibraryContainerLocator, LibraryLocatorV2, LibraryUsageLocatorV2
+from openedx_content import api as content_api
+from openedx_content.models_api import Collection, Component, ComponentVersion, Container, LearningPackage, MediaType
 from openedx_events.content_authoring.data import (
     ContentObjectChangedData,
     LibraryBlockData,
     LibraryCollectionData,
-    LibraryContainerData
+    LibraryContainerData,
 )
 from openedx_events.content_authoring.signals import (
     CONTENT_OBJECT_ASSOCIATIONS_CHANGED,
@@ -34,23 +37,29 @@ from openedx_events.content_authoring.signals import (
     LIBRARY_BLOCK_DELETED,
     LIBRARY_BLOCK_UPDATED,
     LIBRARY_COLLECTION_UPDATED,
-    LIBRARY_CONTAINER_UPDATED
-)
-from openedx_content import api as content_api
-from openedx_content.models_api import (
-    Component, ComponentVersion, LearningPackage, MediaType,
-    Container, Collection
+    LIBRARY_CONTAINER_UPDATED,
 )
 from xblock.core import XBlock
 
 from openedx.core.djangoapps.xblock.api import (
     get_component_from_usage_key,
     get_xblock_app_config,
-    xblock_type_display_name
+    xblock_type_display_name,
 )
 from openedx.core.types import User as UserType
 
+from .. import tasks
 from ..models import ContentLibrary
+from .block_metadata import LibraryXBlockMetadata, LibraryXBlockStaticFile
+from .collections import library_collection_locator
+from .container_metadata import container_subclass_for_olx_tag
+from .containers import (
+    ContainerMetadata,
+    create_container,
+    get_container,
+    get_containers_contains_item,
+    update_container_children,
+)
 from .exceptions import (
     BlockLimitReachedError,
     ContentLibraryBlockNotFound,
@@ -58,18 +67,7 @@ from .exceptions import (
     InvalidNameError,
     LibraryBlockAlreadyExists,
 )
-from .block_metadata import LibraryXBlockMetadata, LibraryXBlockStaticFile
-from .containers import (
-    create_container,
-    get_container,
-    get_containers_contains_item,
-    update_container_children,
-    ContainerMetadata,
-    ContainerType,
-)
-from .collections import library_collection_locator
 from .libraries import PublishableItem
-from .. import tasks
 
 # This content_libraries API is sometimes imported in the LMS (should we prevent that?), but the content_staging app
 # cannot be. For now we only need this one type import at module scope, so only import it during type checks.
@@ -255,12 +253,12 @@ def set_library_block_olx(usage_key: LibraryUsageLocatorV2, new_olx_str: str) ->
 
     # .. event_implemented_name: LIBRARY_BLOCK_UPDATED
     # .. event_type: org.openedx.content_authoring.library_block.updated.v1
-    LIBRARY_BLOCK_UPDATED.send_event(
+    transaction.on_commit(lambda: LIBRARY_BLOCK_UPDATED.send_event(
         library_block=LibraryBlockData(
             library_key=usage_key.context_key,
             usage_key=usage_key
         )
-    )
+    ))
 
     # For each container, trigger LIBRARY_CONTAINER_UPDATED signal and set background=True to trigger
     # container indexing asynchronously.
@@ -268,12 +266,13 @@ def set_library_block_olx(usage_key: LibraryUsageLocatorV2, new_olx_str: str) ->
     for container in affected_containers:
         # .. event_implemented_name: LIBRARY_CONTAINER_UPDATED
         # .. event_type: org.openedx.content_authoring.content_library.container.updated.v1
-        LIBRARY_CONTAINER_UPDATED.send_event(
+        container_key = container.container_key
+        transaction.on_commit(lambda ck=container_key: LIBRARY_CONTAINER_UPDATED.send_event(  # type: ignore[misc]
             library_container=LibraryContainerData(
-                container_key=container.container_key,
+                container_key=ck,
                 background=True,
             )
-        )
+        ))
 
     return new_component_version
 
@@ -496,12 +495,12 @@ def _import_staged_block(
     # Emit library block created event
     # .. event_implemented_name: LIBRARY_BLOCK_CREATED
     # .. event_type: org.openedx.content_authoring.library_block.created.v1
-    LIBRARY_BLOCK_CREATED.send_event(
+    transaction.on_commit(lambda: LIBRARY_BLOCK_CREATED.send_event(
         library_block=LibraryBlockData(
             library_key=content_library.library_key,
             usage_key=usage_key
         )
-    )
+    ))
 
     # Now return the metadata about the new block
     return get_library_block(usage_key)
@@ -547,7 +546,7 @@ def _import_staged_block_as_container(
 
     container = create_container(
         library_key=library_key,
-        container_type=ContainerType.from_source_olx_tag(olx_node.tag),
+        container_cls=container_subclass_for_olx_tag(olx_node.tag),
         slug=None,  # auto-generate slug from title
         title=title,
         user_id=user.id,
@@ -702,21 +701,35 @@ def delete_library_block(
     """
     Delete the specified block from this library (soft delete).
     """
-    component = get_component_from_usage_key(usage_key)
     library_key = usage_key.context_key
+
+    def send_block_deleted_signal():
+        # .. event_implemented_name: LIBRARY_BLOCK_DELETED
+        # .. event_type: org.openedx.content_authoring.library_block.deleted.v1
+        LIBRARY_BLOCK_DELETED.send_event(
+            library_block=LibraryBlockData(
+                library_key=library_key,
+                usage_key=usage_key
+            )
+        )
+
+    try:
+        component = get_component_from_usage_key(usage_key)
+    except Component.DoesNotExist:
+        # There may be cases where entries are created in the
+        # search index, but the component is not created
+        # (an intermediate error occurred).
+        # In that case, we keep the index updated by removing the entry,
+        # but still raise the error so the caller knows the component did not exist.
+        send_block_deleted_signal()
+        raise
+
     affected_collections = content_api.get_entity_collections(component.learning_package_id, component.key)
     affected_containers = get_containers_contains_item(usage_key)
 
     content_api.soft_delete_draft(component.pk, deleted_by=user_id)
 
-    # .. event_implemented_name: LIBRARY_BLOCK_DELETED
-    # .. event_type: org.openedx.content_authoring.library_block.deleted.v1
-    LIBRARY_BLOCK_DELETED.send_event(
-        library_block=LibraryBlockData(
-            library_key=library_key,
-            usage_key=usage_key
-        )
-    )
+    send_block_deleted_signal()
 
     # For each collection, trigger LIBRARY_COLLECTION_UPDATED signal and set background=True to trigger
     # collection indexing asynchronously.

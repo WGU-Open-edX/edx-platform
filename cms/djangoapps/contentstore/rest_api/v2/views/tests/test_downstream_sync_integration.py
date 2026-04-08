@@ -7,13 +7,13 @@ from typing import Any
 from xml.etree import ElementTree
 
 import ddt
-from opaque_keys.edx.keys import UsageKey
 from freezegun import freeze_time
+from opaque_keys.edx.keys import UsageKey
 
-from openedx.core.djangoapps.content_libraries.tests import ContentLibrariesRestApiTest
 from cms.djangoapps.contentstore.xblock_storage_handlers.xblock_helpers import get_block_key_string
+from openedx.core.djangoapps.content_libraries.tests import ContentLibrariesRestApiTest
 from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase, ImmediateOnCommitMixin
+from xmodule.modulestore.tests.django_utils import ImmediateOnCommitMixin, ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
 
 
@@ -128,7 +128,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             "library_content_key": upstream_key,
         }, expect_response=expect_response)
 
-    def _update_course_block_fields(self, usage_key: str, fields: dict[str, Any] = None):
+    def _update_course_block_fields(self, usage_key: str, fields: dict[str, Any] | None = None):
         """ Update fields of an XBlock """
         return self._api('patch', f"/xblock/{usage_key}", {
             "metadata": fields,
@@ -158,7 +158,7 @@ class CourseToLibraryTestCase(ContentLibrariesRestApiTest, ImmediateOnCommitMixi
             data["use_top_level_parents"] = str(use_top_level_parents)
         return self.client.get("/api/contentstore/v2/downstreams/", data=data)
 
-    def assertXmlEqual(self, xml_str_a: str, xml_str_b: str) -> bool:
+    def assertXmlEqual(self, xml_str_a: str, xml_str_b: str) -> None:
         """ Assert that the given XML strings are equal, ignoring attribute order and some whitespace variations. """
         self.assertEqual(
             ElementTree.canonicalize(xml_str_a, strip_text=True),

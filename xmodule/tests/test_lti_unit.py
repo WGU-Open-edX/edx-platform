@@ -8,7 +8,6 @@ from unittest.mock import Mock, PropertyMock, patch
 from urllib import parse
 from zoneinfo import ZoneInfo
 
-
 import pytest
 from django.conf import settings
 from django.test import TestCase, override_settings
@@ -18,16 +17,14 @@ from opaque_keys.edx.locator import BlockUsageLocator
 from webob.request import Request
 from xblock.field_data import DictFieldData
 from xblock.fields import ScopeIds, Timedelta
-
+from xblocks_contrib.lti.lti_2_util import LTIError as ExtractedLTIError
 
 from common.djangoapps.xblock_django.constants import ATTR_KEY_ANONYMOUS_USER_ID
 from xmodule import lti_block
+from xmodule.lti_2_util import LTIError as BuiltInLTIError
 from xmodule.tests.helpers import StubUserService
 
 from . import get_test_system
-
-from xmodule.lti_2_util import LTIError as BuiltInLTIError
-from xblocks_contrib.lti.lti_2_util import LTIError as ExtractedLTIError
 
 
 @override_settings(LMS_BASE="edx.org")
@@ -325,8 +322,8 @@ class _TestLTIBase(TestCase):
         assert real_outcome_service_url == (mock_url_prefix + test_service_name)
 
     def test_resource_link_id(self):
-        with patch('xmodule.lti_block.LTIBlock.location', new_callable=PropertyMock):
-            self.xblock.location.html_id = lambda: 'i4x-2-3-lti-31de800015cf4afb973356dbe81496df'
+        with patch('xmodule.lti_block.LTIBlock.usage_key', new_callable=PropertyMock):
+            self.xblock.usage_key.html_id = lambda: 'i4x-2-3-lti-31de800015cf4afb973356dbe81496df'
             expected_resource_link_id = str(parse.quote(self.unquoted_resource_link_id))
             real_resource_link_id = self.xblock.get_resource_link_id()
             assert real_resource_link_id == expected_resource_link_id

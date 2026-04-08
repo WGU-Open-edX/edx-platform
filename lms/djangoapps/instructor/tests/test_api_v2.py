@@ -8,15 +8,17 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 import ddt
-from django.urls import NoReverseMatch
-from django.urls import reverse
+from django.test import SimpleTestCase, override_settings
+from django.urls import NoReverseMatch, reverse
+from edx_when.api import set_date_for_block, set_dates_for_course
 from opaque_keys import InvalidKeyError
 from pytz import UTC
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
-from edx_when.api import set_dates_for_course, set_date_for_block
-from common.djangoapps.student.roles import CourseDataResearcherRole, CourseInstructorRole
+from common.djangoapps.course_modes.tests.factories import CourseModeFactory
+from common.djangoapps.student.models.course_enrollment import CourseEnrollment
+from common.djangoapps.student.roles import CourseBetaTesterRole, CourseDataResearcherRole, CourseInstructorRole
 from common.djangoapps.student.tests.factories import (
     AdminFactory,
     CourseEnrollmentFactory,
@@ -24,12 +26,11 @@ from common.djangoapps.student.tests.factories import (
     StaffFactory,
     UserFactory,
 )
-from common.djangoapps.course_modes.tests.factories import CourseModeFactory
-from common.djangoapps.student.models.course_enrollment import CourseEnrollment
 from lms.djangoapps.courseware.models import StudentModule
+from lms.djangoapps.instructor.views.serializers_v2 import CourseInformationSerializerV2
 from lms.djangoapps.instructor_task.tests.factories import InstructorTaskFactory
-from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase, TEST_DATA_SPLIT_MODULESTORE
-from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory
+from xmodule.modulestore.tests.django_utils import TEST_DATA_SPLIT_MODULESTORE, SharedModuleStoreTestCase
+from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
 
 
 @ddt.ddt
@@ -456,6 +457,44 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
 
         self.assertNotIn('bulk_email', tab_ids)
 
+    @patch('lms.djangoapps.instructor.views.serializers_v2.is_bulk_email_feature_enabled')
+    @override_settings(COMMUNICATIONS_MICROFRONTEND_URL='http://localhost:1984')
+    def test_bulk_email_tab_url_uses_communications_mfe(self, mock_bulk_email_enabled):
+        """
+        Test that the bulk_email tab URL uses COMMUNICATIONS_MICROFRONTEND_URL,
+        not INSTRUCTOR_MICROFRONTEND_URL.
+        """
+        mock_bulk_email_enabled.return_value = True
+
+        tabs = self._get_tabs_from_response(self.staff)
+        bulk_email_tab = next((tab for tab in tabs if tab['tab_id'] == 'bulk_email'), None)
+
+        self.assertIsNotNone(bulk_email_tab)
+        expected_url = f'http://localhost:1984/courses/{self.course.id}/bulk_email'
+        self.assertEqual(bulk_email_tab['url'], expected_url)
+
+    @patch('lms.djangoapps.instructor.views.serializers_v2.is_bulk_email_feature_enabled')
+    @override_settings(COMMUNICATIONS_MICROFRONTEND_URL=None)
+    def test_bulk_email_tab_logs_warning_when_communications_mfe_url_not_set(self, mock_bulk_email_enabled):
+        """
+        Test that a warning is logged when COMMUNICATIONS_MICROFRONTEND_URL is not set,
+        and the resulting URL does not contain 'None'.
+        """
+        mock_bulk_email_enabled.return_value = True
+
+        with self.assertLogs('lms.djangoapps.instructor.views.serializers_v2', level='WARNING') as cm:
+            tabs = self._get_tabs_from_response(self.staff)
+
+        self.assertTrue(
+            any('COMMUNICATIONS_MICROFRONTEND_URL is not configured' in msg for msg in cm.output)
+        )
+        bulk_email_tab = next((tab for tab in tabs if tab['tab_id'] == 'bulk_email'), None)
+        self.assertIsNotNone(bulk_email_tab)
+        self.assertFalse(
+            bulk_email_tab['url'].startswith('None'),
+            f"Tab URL should not start with 'None': {bulk_email_tab['url']}"
+        )
+
     def test_tabs_have_sort_order(self):
         """
         Test that all tabs include a sort_order field.
@@ -503,7 +542,7 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
             tabs = self._get_tabs_from_response(self.staff)
 
         self.assertTrue(
-            any('INSTRUCTOR_MICROFRONTEND_URL is not set' in msg for msg in cm.output)
+            any('INSTRUCTOR_MICROFRONTEND_URL is not configured' in msg for msg in cm.output)
         )
         # Tab URLs should use empty string as base, not "None"
         for tab in tabs:
@@ -532,6 +571,62 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['pacing'], 'self')
+
+
+class BuildTabUrlTest(SimpleTestCase):
+    """
+    Unit tests for CourseInformationSerializerV2._build_tab_url.
+
+    Tests the helper directly to verify URL joining behavior without
+    going through the full API stack.
+    """
+
+    def _build(self, setting_name, *parts):
+        return CourseInformationSerializerV2._build_tab_url(setting_name, *parts)  # pylint: disable=protected-access
+
+    @override_settings(INSTRUCTOR_MICROFRONTEND_URL='http://localhost:2003')
+    def test_joins_base_and_path_parts(self):
+        """Parts are joined with '/' separators."""
+        result = self._build('INSTRUCTOR_MICROFRONTEND_URL', 'instructor', 'course-v1:edX+DemoX+Demo', 'grading')
+        self.assertEqual(result, 'http://localhost:2003/instructor/course-v1:edX+DemoX+Demo/grading')
+
+    @override_settings(INSTRUCTOR_MICROFRONTEND_URL='http://localhost:2003/')
+    def test_strips_trailing_slash_from_base(self):
+        """A trailing slash on the base URL does not produce a double slash."""
+        result = self._build('INSTRUCTOR_MICROFRONTEND_URL', 'instructor', 'course-v1:edX+DemoX+Demo', 'grading')
+        self.assertEqual(result, 'http://localhost:2003/instructor/course-v1:edX+DemoX+Demo/grading')
+
+    @override_settings(INSTRUCTOR_MICROFRONTEND_URL='http://localhost:2003')
+    def test_strips_slashes_from_path_parts(self):
+        """Leading and trailing slashes on path parts are stripped before joining."""
+        result = self._build('INSTRUCTOR_MICROFRONTEND_URL', '/instructor/', '/course-v1:edX+DemoX+Demo/', '/grading/')
+        self.assertEqual(result, 'http://localhost:2003/instructor/course-v1:edX+DemoX+Demo/grading')
+
+    @override_settings(COMMUNICATIONS_MICROFRONTEND_URL=None)
+    def test_logs_warning_and_returns_relative_url_when_setting_is_none(self):
+        """When the setting is None, a warning is logged and the URL is relative (no 'None' prefix)."""
+        with self.assertLogs('lms.djangoapps.instructor.views.serializers_v2', level='WARNING') as cm:
+            result = self._build(
+                'COMMUNICATIONS_MICROFRONTEND_URL', 'courses', 'course-v1:edX+DemoX+Demo', 'bulk_email'
+            )
+
+        self.assertTrue(any('COMMUNICATIONS_MICROFRONTEND_URL is not configured' in msg for msg in cm.output))
+        self.assertFalse(result.startswith('None'))
+        self.assertEqual(result, '/courses/course-v1:edX+DemoX+Demo/bulk_email')
+
+    def test_logs_warning_when_setting_does_not_exist(self):
+        """When the setting name is not defined at all, behavior matches the None case."""
+        with self.assertLogs('lms.djangoapps.instructor.views.serializers_v2', level='WARNING') as cm:
+            result = self._build('NONEXISTENT_MFE_URL', 'instructor', 'course-v1:edX+DemoX+Demo', 'grading')
+
+        self.assertTrue(any('NONEXISTENT_MFE_URL is not configured' in msg for msg in cm.output))
+        self.assertEqual(result, '/instructor/course-v1:edX+DemoX+Demo/grading')
+
+    @override_settings(COMMUNICATIONS_MICROFRONTEND_URL='http://localhost:1984/communications/')
+    def test_base_with_subpath_and_trailing_slash(self):
+        """Base URL with a subpath and trailing slash is joined cleanly."""
+        result = self._build('COMMUNICATIONS_MICROFRONTEND_URL', 'courses', 'course-v1:edX+DemoX+Demo', 'bulk_email')
+        self.assertEqual(result, 'http://localhost:1984/communications/courses/course-v1:edX+DemoX+Demo/bulk_email')
 
 
 @ddt.ddt
@@ -1735,7 +1830,6 @@ class UnitExtensionsViewTest(SharedModuleStoreTestCase):
         self.assertIsInstance(extension['unit_title'], str)
         self.assertIsInstance(extension['unit_location'], str)
 
-
 @ddt.ddt
 class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
     """
@@ -1986,3 +2080,223 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
             self.assertIsInstance(entry['taskName'], str)
             self.assertIsInstance(entry['date'], str)
             self.assertIsInstance(entry['details'], str)
+
+
+class CourseEnrollmentsViewTest(SharedModuleStoreTestCase):
+    """Tests for the CourseEnrollmentsView v2 GET endpoint."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.course = CourseFactory.create()
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.instructor = InstructorFactory(course_key=self.course.id)
+        self.url = reverse(
+            'instructor_api_v2:course_enrollments',
+            kwargs={'course_id': str(self.course.id)}
+        )
+
+        self.enrolled_users = []
+        for i in range(30):
+            user = UserFactory(
+                username=f'student_{i}',
+                email=f'student{i}@example.com',
+                first_name=f'Student{i}',
+                last_name=f'Learner{i}'
+            )
+            CourseEnrollmentFactory(
+                user=user,
+                course_id=self.course.id,
+                is_active=True
+            )
+            self.enrolled_users.append(user)
+
+        # Inactive enrollments should not appear
+        for i in range(5):
+            user = UserFactory(
+                username=f'inactive_{i}',
+                email=f'inactive{i}@example.com'
+            )
+            CourseEnrollmentFactory(
+                user=user,
+                course_id=self.course.id,
+                is_active=False
+            )
+
+    def test_unauthenticated_returns_401(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_student_returns_403(self):
+        student = UserFactory()
+        self.client.force_authenticate(user=student)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_default_pagination(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data['course_id'], str(self.course.id))
+        self.assertEqual(data['count'], 30)
+        self.assertEqual(data['num_pages'], 3)
+        self.assertEqual(data['current_page'], 1)
+        self.assertIn('next', data)
+        self.assertIsNone(data['previous'])
+        self.assertIn('results', data)
+        # DefaultPagination page_size=10
+        self.assertEqual(len(data['results']), 10)
+
+    def test_custom_pagination(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page': 1, 'page_size': 15})
+        data = response.data
+        self.assertEqual(data['count'], 30)
+        self.assertEqual(data['num_pages'], 2)
+        self.assertEqual(data['current_page'], 1)
+        self.assertEqual(len(data['results']), 15)
+
+    def test_second_page(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page': 2, 'page_size': 10})
+        data = response.data
+        self.assertEqual(data['current_page'], 2)
+        self.assertEqual(len(data['results']), 10)
+        self.assertIsNotNone(data['previous'])
+
+    def test_last_page_partial(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page': 3, 'page_size': 10})
+        data = response.data
+        self.assertEqual(data['current_page'], 3)
+        self.assertEqual(len(data['results']), 10)
+        self.assertIsNone(data['next'])
+
+    def test_search_by_username(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'search': 'student_2', 'page_size': 100})
+        data = response.data
+        # Matches student_2, student_20..student_29 = 11
+        self.assertEqual(data['count'], 11)
+        for user in data['results']:
+            self.assertIn('student_2', user['username'])
+
+    def test_search_by_email(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'search': 'student7@example.com'})
+        data = response.data
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['results'][0]['email'], 'student7@example.com')
+
+    def test_search_case_insensitive(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'search': 'STUDENT_5'})
+        data = response.data
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['results'][0]['username'], 'student_5')
+
+    def test_search_no_results(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'search': 'nonexistent'})
+        data = response.data
+        self.assertEqual(data['count'], 0)
+        self.assertEqual(len(data['results']), 0)
+
+    def test_excludes_inactive_enrollments(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'search': 'inactive'})
+        data = response.data
+        self.assertEqual(data['count'], 0)
+
+    def test_invalid_page_returns_404(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page': 999})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_ordered_by_username(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page_size': 5})
+        data = response.data
+        usernames = [u['username'] for u in data['results']]
+        self.assertEqual(usernames, sorted(usernames))
+
+    def test_staff_can_access(self):
+        staff = StaffFactory(course_key=self.course.id)
+        self.client.force_authenticate(user=staff)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_includes_mode_field(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page_size': 1})
+        enrollment = response.data['results'][0]
+        self.assertIn('mode', enrollment)
+
+    def test_includes_full_name_field(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page_size': 1})
+        enrollment = response.data['results'][0]
+        self.assertIn('full_name', enrollment)
+
+    def test_includes_is_beta_tester_field(self):
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'page_size': 100})
+        for enrollment in response.data['results']:
+            self.assertIn('is_beta_tester', enrollment)
+            self.assertFalse(enrollment['is_beta_tester'])
+
+    def test_beta_tester_flag_true(self):
+        beta_role = CourseBetaTesterRole(self.course.id)
+        target_user = self.enrolled_users[0]
+        beta_role.add_users(target_user)
+
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'search': target_user.username})
+        data = response.data
+        self.assertEqual(data['count'], 1)
+        self.assertTrue(data['results'][0]['is_beta_tester'])
+
+    def test_filter_beta_testers_only(self):
+        beta_role = CourseBetaTesterRole(self.course.id)
+        beta_users = self.enrolled_users[:3]
+        for user in beta_users:
+            beta_role.add_users(user)
+
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'is_beta_tester': 'true', 'page_size': 100})
+        data = response.data
+        self.assertEqual(data['count'], 3)
+        for enrollment in data['results']:
+            self.assertTrue(enrollment['is_beta_tester'])
+
+    def test_filter_non_beta_testers_only(self):
+        beta_role = CourseBetaTesterRole(self.course.id)
+        beta_users = self.enrolled_users[:3]
+        for user in beta_users:
+            beta_role.add_users(user)
+
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {'is_beta_tester': 'false', 'page_size': 100})
+        data = response.data
+        self.assertEqual(data['count'], 27)
+        for enrollment in data['results']:
+            self.assertFalse(enrollment['is_beta_tester'])
+
+    def test_filter_beta_testers_with_search(self):
+        beta_role = CourseBetaTesterRole(self.course.id)
+        beta_users = self.enrolled_users[:5]
+        for user in beta_users:
+            beta_role.add_users(user)
+
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.get(self.url, {
+            'is_beta_tester': 'true',
+            'search': self.enrolled_users[0].username,
+        })
+        data = response.data
+        self.assertEqual(data['count'], 1)
+        self.assertTrue(data['results'][0]['is_beta_tester'])

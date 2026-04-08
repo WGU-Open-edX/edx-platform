@@ -43,29 +43,30 @@ Conventions
 import os
 
 from corsheaders.defaults import default_headers as corsheaders_default_headers
-from path import Path as path
 from django.utils.translation import gettext_lazy as _
+from edx_django_utils.plugins import add_plugins, get_plugin_apps
 from enterprise.constants import (
+    DEFAULT_ENTERPRISE_ENROLLMENT_INTENTIONS_ROLE,
     ENTERPRISE_ADMIN_ROLE,
-    ENTERPRISE_LEARNER_ROLE,
     ENTERPRISE_CATALOG_ADMIN_ROLE,
     ENTERPRISE_DASHBOARD_ADMIN_ROLE,
     ENTERPRISE_ENROLLMENT_API_ADMIN_ROLE,
     ENTERPRISE_FULFILLMENT_OPERATOR_ROLE,
+    ENTERPRISE_LEARNER_ROLE,
+    ENTERPRISE_OPERATOR_ROLE,
     ENTERPRISE_REPORTING_CONFIG_ADMIN_ROLE,
     ENTERPRISE_SSO_ORCHESTRATOR_OPERATOR_ROLE,
-    ENTERPRISE_OPERATOR_ROLE,
-    SYSTEM_ENTERPRISE_PROVISIONING_ADMIN_ROLE,
     PROVISIONING_ENTERPRISE_CUSTOMER_ADMIN_ROLE,
     PROVISIONING_PENDING_ENTERPRISE_CUSTOMER_ADMIN_ROLE,
-    DEFAULT_ENTERPRISE_ENROLLMENT_INTENTIONS_ROLE,
+    SYSTEM_ENTERPRISE_PROVISIONING_ADMIN_ROLE,
 )
 from openedx_content.settings_api import openedx_content_backcompat_apps_to_install
+from path import Path as path
 
+from openedx.core.djangoapps.plugins.constants import ProjectType, SettingsType
 from openedx.core.lib.derived import Derived
-from openedx.envs.common import *  # pylint: disable=wildcard-import
-
 from openedx.core.lib.features_setting_proxy import FeaturesProxy
+from openedx.envs.common import *  # pylint: disable=wildcard-import
 
 # A proxy for feature flags stored in the settings namespace
 FEATURES = FeaturesProxy(globals())
@@ -2473,7 +2474,6 @@ ACCOUNT_VISIBILITY_CONFIGURATION["admin_fields"] = (
         "secondary_email_enabled",
         "year_of_birth",
         "phone_number",
-        "activation_key",
         "pending_name_change",
     ]
 )
@@ -2845,6 +2845,10 @@ CATALOG_MICROFRONTEND_URL = None
 # .. setting_default: None
 # .. setting_description: Base URL of the micro-frontend-based instructor app.
 INSTRUCTOR_MICROFRONTEND_URL = None
+# .. setting_name: COMMUNICATIONS_MICROFRONTEND_URL
+# .. setting_default: None
+# .. setting_description: Base URL of the micro-frontend-based communications app.
+COMMUNICATIONS_MICROFRONTEND_URL = None
 # .. setting_name: DISCUSSION_SPAM_URLS
 # .. setting_default: []
 # .. setting_description: Urls to filter from discussion content to avoid spam
@@ -2937,6 +2941,7 @@ ENFORCE_SESSION_EMAIL_MATCH = False
 # Note that all settings are actually defined by the plugin
 # pylint: disable=wrong-import-position
 from openedx.core.djangoapps.ace_common.settings import common as ace_common_settings
+
 ACE_ROUTING_KEY = ace_common_settings.ACE_ROUTING_KEY
 
 ############### Settings for facebook ##############################
@@ -2950,8 +2955,6 @@ USER_STATE_BATCH_SIZE = 5000
 
 ############## Plugin Django Apps #########################
 
-from edx_django_utils.plugins import get_plugin_apps, add_plugins  # pylint: disable=wrong-import-position,wrong-import-order
-from openedx.core.djangoapps.plugins.constants import ProjectType, SettingsType  # pylint: disable=wrong-import-position
 INSTALLED_APPS.extend(get_plugin_apps(ProjectType.LMS))
 add_plugins(__name__, ProjectType.LMS, SettingsType.COMMON)
 
@@ -3070,6 +3073,25 @@ MFE_CONFIG = {}
 # .. setting_use_cases: open_edx
 # .. setting_creation_date: 2022-08-05
 MFE_CONFIG_OVERRIDES = {}
+
+# .. setting_name: FRONTEND_SITE_CONFIG
+# .. setting_implementation: DjangoSetting
+# .. setting_default: {}
+# .. setting_description: Frontend site configuration in frontend-base's native camelCase
+#   format.  Unlike MFE_CONFIG, values here require no translation and are passed through
+#   to the /api/frontend_site_config/v1/ endpoint as-is, at the highest precedence (overriding any
+#   values translated from MFE_CONFIG).
+#   See https://github.com/openedx/frontend-base/blob/main/types.ts for the expected
+#   SiteConfig schema.
+#   Example: {
+#     "externalRoutes": [
+#       {"role": "learnerDashboard", "url": "https://courses.example.com/dashboard"}
+#     ],
+#     "logoutUrl": "https://courses.example.com/logout"
+#   }
+# .. setting_use_cases: open_edx
+# .. setting_creation_date: 2026-04-04
+FRONTEND_SITE_CONFIG = {}
 
 # .. setting_name: MFE_CONFIG_API_CACHE_TIMEOUT
 # .. setting_default: 60*5

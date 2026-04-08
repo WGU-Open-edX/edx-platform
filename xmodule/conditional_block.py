@@ -20,15 +20,8 @@ from xmodule.seq_block import SequenceMixin
 from xmodule.studio_editable import StudioEditableBlock
 from xmodule.util.builtin_assets import add_webpack_js_to_fragment
 from xmodule.validation import StudioValidation, StudioValidationMessage
+from xmodule.x_module import STUDENT_VIEW, ResourceTemplates, XModuleMixin, XModuleToXBlockMixin, shim_xmodule_js
 from xmodule.xml_block import XmlMixin
-from xmodule.x_module import (
-    ResourceTemplates,
-    shim_xmodule_js,
-    STUDENT_VIEW,
-    XModuleMixin,
-    XModuleToXBlockMixin,
-)
-
 
 log = logging.getLogger('edx.' + __name__)
 
@@ -222,9 +215,9 @@ class ConditionalBlock(
         return fragment
 
     def get_html(self):
-        required_html_ids = [block.location.html_id() for block in self.get_required_blocks]
+        required_html_ids = [block.usage_key.html_id() for block in self.get_required_blocks]
         return self.runtime.service(self, 'mako').render_lms_template('conditional_ajax.html', {
-            'element_id': self.location.html_id(),
+            'element_id': self.usage_key.html_id(),
             'ajax_url': self.ajax_url,
             'depends': ';'.join(required_html_ids)
         })

@@ -1,12 +1,11 @@
 """
 Tests for openedx_content-based Content Libraries
 """
-from datetime import datetime, timezone
 import textwrap
+from datetime import datetime, timezone
 
 import ddt
 from freezegun import freeze_time
-
 from opaque_keys.edx.locator import LibraryLocatorV2
 
 from common.djangoapps.student.tests.factories import UserFactory
@@ -604,7 +603,7 @@ class ContainersTestCase(ContentLibrariesRestApiTest):
         assert unit_as_read['collections'] == [{"title": col1.title, "key": col1.key}]
 
     def test_section_hierarchy(self):
-        with self.assertNumQueries(133):
+        with self.assertNumQueries(126):
             hierarchy = self._get_container_hierarchy(self.section_with_subsections["id"])
         assert hierarchy["object_key"] == self.section_with_subsections["id"]
         assert hierarchy["components"] == [
@@ -630,7 +629,7 @@ class ContainersTestCase(ContentLibrariesRestApiTest):
         ]
 
     def test_subsection_hierarchy(self):
-        with self.assertNumQueries(95):
+        with self.assertNumQueries(91):
             hierarchy = self._get_container_hierarchy(self.subsection_with_units["id"])
         assert hierarchy["object_key"] == self.subsection_with_units["id"]
         assert hierarchy["components"] == [
@@ -653,7 +652,7 @@ class ContainersTestCase(ContentLibrariesRestApiTest):
         ]
 
     def test_units_hierarchy(self):
-        with self.assertNumQueries(60):
+        with self.assertNumQueries(56):
             hierarchy = self._get_container_hierarchy(self.unit_with_components["id"])
         assert hierarchy["object_key"] == self.unit_with_components["id"]
         assert hierarchy["components"] == [
@@ -679,7 +678,7 @@ class ContainersTestCase(ContentLibrariesRestApiTest):
         )
 
     def test_block_hierarchy(self):
-        with self.assertNumQueries(27):
+        with self.assertNumQueries(24):
             hierarchy = self._get_block_hierarchy(self.problem_block["id"])
         assert hierarchy["object_key"] == self.problem_block["id"]
         assert hierarchy["components"] == [

@@ -13,13 +13,12 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from rest_framework import serializers
 
-
 from common.djangoapps.student.models import (
     LanguageProficiency,
     PendingNameChange,
     SocialLink,
     UserPasswordToggleHistory,
-    UserProfile
+    UserProfile,
 )
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_api import errors
@@ -36,7 +35,7 @@ from . import (
     CUSTOM_VISIBILITY,
     NAME_MIN_LENGTH,
     PRIVATE_VISIBILITY,
-    VISIBILITY_PREFIX
+    VISIBILITY_PREFIX,
 )
 from .image_helpers import get_profile_image_urls_for_user
 from .utils import format_social_link, validate_social_link
@@ -142,11 +141,6 @@ class UserReadOnlySerializer(serializers.Serializer):  # lint-amnesty, pylint: d
         except ObjectDoesNotExist:
             account_recovery = None
 
-        try:
-            activation_key = user.registration.activation_key
-        except ObjectDoesNotExist:
-            activation_key = None
-
         data = {
             "username": user.username,
             "url": self.context.get('request').build_absolute_uri(
@@ -161,7 +155,6 @@ class UserReadOnlySerializer(serializers.Serializer):  # lint-amnesty, pylint: d
             "date_joined": user.date_joined.replace(microsecond=0),
             "last_login": user.last_login,
             "is_active": user.is_active,
-            "activation_key": activation_key,
             "bio": None,
             "country": None,
             "state": None,

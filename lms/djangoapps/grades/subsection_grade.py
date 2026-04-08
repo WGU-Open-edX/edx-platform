@@ -7,6 +7,7 @@ from abc import ABCMeta
 from collections import OrderedDict
 from datetime import datetime, timezone
 from logging import getLogger
+
 from lazy import lazy
 from xblock.scorable import ShowCorrectness
 
@@ -26,7 +27,7 @@ class SubsectionGradeBase(metaclass=ABCMeta):
     def __init__(self, subsection):
         self.location = subsection.location
         self.display_name = block_metadata_utils.display_name_with_default(subsection)
-        self.url_name = block_metadata_utils.url_name_for_block(subsection)
+        self.url_name = subsection.usage_key.block_id
 
         self.due = block_metadata_utils.get_datetime_field(subsection, 'due', None)
         self.end = getattr(subsection, 'end', None)

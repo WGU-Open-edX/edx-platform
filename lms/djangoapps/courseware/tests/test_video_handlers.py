@@ -7,34 +7,36 @@ import tempfile
 import textwrap
 from datetime import timedelta
 from unittest.mock import MagicMock, Mock, patch
-import pytest
+
 import ddt
 import freezegun
+import pytest
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.utils.timezone import now
 from django.test import RequestFactory
+from django.utils.timezone import now
 from edxval import api
-from xblock.django.request import DjangoWebobRequest
 from webob import Request, Response
+from xblock.django.request import DjangoWebobRequest
 
 from common.djangoapps.student.tests.factories import UserFactory
 from common.test.utils import normalize_repr
 from openedx.core.djangoapps.contentserver.caching import del_cached_content
-from xmodule.contentstore.content import StaticContent  # lint-amnesty, pylint: disable=wrong-import-order
-from xmodule.contentstore.django import contentstore  # lint-amnesty, pylint: disable=wrong-import-order
-from xmodule.exceptions import NotFoundError  # lint-amnesty, pylint: disable=wrong-import-order
-from xmodule.modulestore import ModuleStoreEnum  # lint-amnesty, pylint: disable=wrong-import-order
-from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
-# noinspection PyUnresolvedReferences
-from xmodule.tests.helpers import override_descriptor_system  # pylint: disable=unused-import
-from xmodule.video_block import VideoBlock  # lint-amnesty, pylint: disable=wrong-import-order
 from openedx.core.djangoapps.video_config.transcripts_utils import (  # lint-amnesty, pylint: disable=wrong-import-order
     Transcript,
     edxval_api,
     get_transcript,
     subs_filename,
 )
+from xmodule.contentstore.content import StaticContent  # lint-amnesty, pylint: disable=wrong-import-order
+from xmodule.contentstore.django import contentstore  # lint-amnesty, pylint: disable=wrong-import-order
+from xmodule.exceptions import NotFoundError  # lint-amnesty, pylint: disable=wrong-import-order
+from xmodule.modulestore import ModuleStoreEnum  # lint-amnesty, pylint: disable=wrong-import-order
+from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
+
+# noinspection PyUnresolvedReferences
+from xmodule.tests.helpers import override_descriptor_system  # pylint: disable=unused-import
+from xmodule.video_block import VideoBlock  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.x_module import STUDENT_VIEW
 
 from .helpers import BaseTestXmodule
@@ -798,7 +800,7 @@ class TestTranscriptTranslationGetDispatch(TestVideo):  # lint-amnesty, pylint: 
         if sub:
             assert ('Location', f'/static/dummy/static/subs_{sub}.srt.sjson') in response.headerlist
 
-    @patch('xmodule.video_block.VideoBlock.course_id', return_value='not_a_course_locator')
+    @patch('xmodule.video_block.VideoBlock.context_key', return_value='not_a_course_locator')
     def test_translation_static_non_course(self, __):
         """
         Test that get_static_transcript short-circuits in the case of a non-CourseLocator.
@@ -806,7 +808,7 @@ class TestTranscriptTranslationGetDispatch(TestVideo):  # lint-amnesty, pylint: 
         """
         self._set_static_asset_path()
 
-        # When course_id is not mocked out, these values would result in 307, as tested above.
+        # When context_key is not mocked out, these values would result in 307, as tested above.
         request = _create_djangowebobrequest_object_for_url('/translation/en?videoId=12345')
         response = self.block.transcript(request=request, dispatch='translation/en')
         assert response.status == '404 Not Found'

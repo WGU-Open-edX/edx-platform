@@ -14,21 +14,20 @@ from config_models.models import ConfigurationModel
 from django.conf import settings
 from django.db import models, transaction
 from django.db.models import Q
-from django.db.models.signals import post_save, post_delete
+from django.db.models.signals import post_delete, post_save
 from django.db.utils import IntegrityError
 from django.template import defaultfilters
-
 from django.utils.functional import cached_property
 from model_utils.models import TimeStampedModel
 from opaque_keys.edx.django.models import CourseKeyField, UsageKeyField
 from simple_history.models import HistoricalRecords
 
+from common.djangoapps.static_replace.models import AssetBaseUrlConfig
 from lms.djangoapps.courseware.model_data import FieldDataCache
 from openedx.core.djangoapps.catalog.models import CatalogIntegration
 from openedx.core.djangoapps.lang_pref.api import get_closest_released_language
 from openedx.core.djangoapps.models.course_details import CourseDetails
-from openedx.core.lib.cache_utils import request_cached, RequestCache
-from common.djangoapps.static_replace.models import AssetBaseUrlConfig
+from openedx.core.lib.cache_utils import RequestCache, request_cached
 from xmodule import block_metadata_utils, course_metadata_utils  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.course_block import DEFAULT_START_DATE, CourseBlock  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.error_block import ErrorBlock  # lint-amnesty, pylint: disable=wrong-import-order
@@ -478,9 +477,9 @@ class CourseOverview(TimeStampedModel):
         return course_metadata_utils.clean_course_key(self.location.course_key, padding_char)
 
     @property
-    def location(self):
+    def usage_key(self):
         """
-        Returns the UsageKey of this course.
+        Returns the UsageKey of the root block of this course.
 
         UsageKeyField has a strange behavior where it fails to parse the "run"
         of a course out of the serialized form of a Mongo Draft UsageKey. This
@@ -490,6 +489,13 @@ class CourseOverview(TimeStampedModel):
         if self._location.run is None:
             self._location = self._location.map_into_course(self.id)
         return self._location
+
+    @property
+    def location(self):
+        """
+        The old name for `usage_key`. This method is analogous to `XModuleMixin.location`.
+        """
+        return self.usage_key
 
     @property
     def number(self):
@@ -506,9 +512,9 @@ class CourseOverview(TimeStampedModel):
     @property
     def url_name(self):
         """
-        Returns this course's URL name.
+        The old name for `block_id`. This method is analogous to `XModuleMixin.url_name`.
         """
-        return block_metadata_utils.url_name_for_block(self)
+        return self.usage_key.block_id
 
     @property
     def display_name_with_default(self):

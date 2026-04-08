@@ -1,15 +1,16 @@
 """
 Tests for openedx_content-based Content Libraries
 """
-from contextlib import contextmanager
 import json
+from contextlib import contextmanager
 from io import BytesIO
 from urllib.parse import urlencode
 
-from organizations.models import Organization
-from rest_framework.test import APITransactionTestCase, APIClient
 from opaque_keys.edx.keys import ContainerKey, UsageKey
-from opaque_keys.edx.locator import LibraryLocatorV2, LibraryCollectionLocator
+from opaque_keys.edx.locator import LibraryCollectionLocator, LibraryLocatorV2
+from openedx_content import models_api as content_models
+from organizations.models import Organization
+from rest_framework.test import APIClient, APITransactionTestCase
 
 from common.djangoapps.student.tests.factories import UserFactory
 from common.djangoapps.util.json_request import JsonResponse as SpecialJsonResponse
@@ -52,10 +53,6 @@ URL_LIB_CONTAINER_COPY = URL_LIB_CONTAINER + 'copy/'  # Copy the specified conta
 URL_LIB_COLLECTION = URL_LIB_COLLECTIONS + '{collection_key}/'  # Get a collection in this library
 URL_LIB_COLLECTION_ITEMS = URL_LIB_COLLECTION + 'items/'  # Get a collection in this library
 
-URL_LIB_LTI_PREFIX = URL_PREFIX + 'lti/1.3/'
-URL_LIB_LTI_JWKS = URL_LIB_LTI_PREFIX + 'pub/jwks/'
-URL_LIB_LTI_LAUNCH = URL_LIB_LTI_PREFIX + 'launch/'
-
 URL_BLOCK_RENDER_VIEW = '/api/xblock/v2/xblocks/{block_key}/view/{view_name}/'
 URL_BLOCK_EMBED_VIEW = '/xblocks/v2/{block_key}/embed/{view_name}/'  # Returns HTML not JSON so its URL is different
 URL_BLOCK_GET_HANDLER_URL = '/api/xblock/v2/xblocks/{block_key}/handler_url/{handler_name}/'
@@ -94,6 +91,11 @@ class ContentLibrariesRestApiTest(APITransactionTestCase):
         )
         self.clients_by_user = {}
         self.client.login(username=self.user.username, password="edx")
+
+    def tearDown(self):
+        # If we're working with Containers in test cases, we need this line:
+        content_models.Container.reset_cache()
+        return super().tearDown()
 
     # Assertions
 
@@ -408,9 +410,15 @@ class ContentLibrariesRestApiTest(APITransactionTestCase):
         """ Set the fields of a specific block in the library. This API is only used by the MFE editors. """
         return self._api('post', URL_BLOCK_FIELDS_URL.format(block_key=block_key), new_fields, expect_response)
 
-    def _create_container(self, lib_key, container_type, slug: str | None, display_name: str, expect_response=200):
+    def _create_container(self,
+        lib_key,
+        container_type_code: str,
+        slug: str | None,
+        display_name: str,
+        expect_response=200,
+    ):
         """ Create a container (unit etc.) """
-        data = {"container_type": container_type, "display_name": display_name}
+        data = {"container_type_code": container_type_code, "display_name": display_name}
         if slug:
             data["slug"] = slug
         return self._api('post', URL_LIB_CONTAINERS.format(lib_key=lib_key), data, expect_response)

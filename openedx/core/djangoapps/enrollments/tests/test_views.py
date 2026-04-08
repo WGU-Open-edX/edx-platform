@@ -8,11 +8,11 @@ import itertools
 import json
 from unittest.mock import patch
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import ddt
 import httpretty
 import pytest
-from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
@@ -20,7 +20,6 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.test import Client
 from django.test.utils import override_settings
 from django.urls import reverse
-from edx_toggles.toggles.testutils import override_waffle_flag
 from freezegun import freeze_time
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -39,7 +38,6 @@ from openedx.core.djangoapps.embargo.test_utils import restrict_course
 from openedx.core.djangoapps.enrollments import api, data
 from openedx.core.djangoapps.enrollments.errors import CourseEnrollmentError
 from openedx.core.djangoapps.enrollments.views import EnrollmentUserThrottle
-from openedx.core.djangoapps.notifications.config.waffle import ENABLE_NOTIFICATIONS
 from openedx.core.djangoapps.oauth_dispatch.jwt import create_jwt_for_user
 from openedx.core.djangoapps.user_api.models import RetirementState, UserOrgTag, UserRetirementStatus
 from openedx.core.djangolib.testing.utils import skip_unless_lms
@@ -155,7 +153,6 @@ class EnrollmentTestMixin:
 
 
 @override_settings(EDX_API_KEY="i am a key")
-@override_waffle_flag(ENABLE_NOTIFICATIONS, True)
 @ddt.ddt
 @skip_unless_lms
 class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, EnterpriseServiceMockMixin):

@@ -9,7 +9,7 @@ contentstore/views/block.py to this file, because the logic is reused in another
 Along with it, we moved the business logic of the other views in that file, since that is related.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from attrs import asdict
@@ -20,9 +20,14 @@ from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.utils.translation import gettext as _
 from edx_django_utils.plugins import pluggable_override
-from openedx.core.djangoapps.content_libraries.api import ContainerMetadata, ContainerType, LibraryXBlockMetadata
-from openedx.core.djangoapps.content_tagging.api import get_object_tag_counts
-from openedx.core import toggles as core_toggles
+from edx_proctoring.api import (
+    does_backend_support_onboarding,
+    get_exam_by_content_id,
+    get_exam_configuration_dashboard_url,
+)
+from edx_proctoring.exceptions import ProctoredExamNotFoundException
+from help_tokens.core import HelpUrlExpert
+from opaque_keys.edx.locator import LibraryUsageLocator, LibraryUsageLocatorV2
 from openedx_authz import api as authz_api
 from openedx_authz.constants.permissions import (
     COURSES_EDIT_COURSE_CONTENT,
@@ -32,18 +37,10 @@ from openedx_authz.constants.permissions import (
     COURSES_VIEW_COURSE,
     COURSES_VIEW_COURSE_UPDATES,
 )
-from edx_proctoring.api import (
-    does_backend_support_onboarding,
-    get_exam_by_content_id,
-    get_exam_configuration_dashboard_url,
-)
-from edx_proctoring.exceptions import ProctoredExamNotFoundException
-from help_tokens.core import HelpUrlExpert
-from opaque_keys.edx.locator import LibraryUsageLocator, LibraryUsageLocatorV2
-from pytz import UTC
+from openedx_content import api as content_api
+from openedx_content import models_api as content_models
 from xblock.core import XBlock
 from xblock.fields import Scope
-from .xblock_helpers import get_block_key_string
 
 from cms.djangoapps.contentstore.helpers import StaticFileNotices
 from cms.djangoapps.models.settings.course_grading import CourseGradingModel
@@ -52,19 +49,19 @@ from cms.lib.xblock.upstream_sync import BadUpstream, UpstreamLink
 from cms.lib.xblock.upstream_sync_block import sync_from_upstream_block
 from cms.lib.xblock.upstream_sync_container import sync_from_upstream_container
 from common.djangoapps.static_replace import replace_static_urls
-from common.djangoapps.student.auth import (
-    has_studio_read_access,
-    has_studio_write_access,
-)
+from common.djangoapps.student.auth import has_studio_read_access, has_studio_write_access
 from common.djangoapps.util.date_utils import get_default_time_display
 from common.djangoapps.util.json_request import JsonResponse, expect_json
 from common.djangoapps.util.proctoring import show_review_rules
+from openedx.core import toggles as core_toggles
 from openedx.core.djangoapps.bookmarks import api as bookmarks_api
+from openedx.core.djangoapps.content_libraries.api import ContainerMetadata, LibraryXBlockMetadata
+from openedx.core.djangoapps.content_tagging.api import get_object_tag_counts
 from openedx.core.djangoapps.content_tagging.toggles import is_tagging_feature_disabled
 from openedx.core.djangoapps.discussions.models import DiscussionsConfiguration
 from openedx.core.djangoapps.video_config.toggles import PUBLIC_VIDEO_SHARE
-from openedx.core.lib.gating import api as gating_api
 from openedx.core.lib.cache_utils import request_cached
+from openedx.core.lib.gating import api as gating_api
 from openedx.core.lib.xblock_utils import get_icon
 from openedx.core.toggles import ENTRANCE_EXAMS
 from xmodule.course_block import DEFAULT_START_DATE
@@ -75,23 +72,6 @@ from xmodule.modulestore.exceptions import InvalidLocationError, ItemNotFoundErr
 from xmodule.modulestore.inheritance import own_metadata
 from xmodule.tabs import CourseTabList
 
-from ..utils import (
-    ancestor_has_staff_lock,
-    find_release_date_source,
-    find_staff_lock_source,
-    get_split_group_display_name,
-    get_user_partition_info,
-    get_visibility_partition_info,
-    has_children_visible_to_specific_partition_groups,
-    is_currently_visible_to_students,
-    is_self_paced,
-    get_taxonomy_tags_widget_url,
-    load_services_for_studio,
-    duplicate_block,
-)
-
-from .create_xblock import create_xblock
-from .xblock_helpers import usage_key_with_run
 from ..helpers import (
     concat_static_file_notices,
     get_parent_xblock,
@@ -104,6 +84,22 @@ from ..helpers import (
     xblock_studio_url,
     xblock_type_display_name,
 )
+from ..utils import (
+    ancestor_has_staff_lock,
+    duplicate_block,
+    find_release_date_source,
+    find_staff_lock_source,
+    get_split_group_display_name,
+    get_taxonomy_tags_widget_url,
+    get_user_partition_info,
+    get_visibility_partition_info,
+    has_children_visible_to_specific_partition_groups,
+    is_currently_visible_to_students,
+    is_self_paced,
+    load_services_for_studio,
+)
+from .create_xblock import create_xblock
+from .xblock_helpers import get_block_key_string, usage_key_with_run
 
 log = logging.getLogger(__name__)
 
@@ -659,7 +655,7 @@ def sync_library_content(
         with store.bulk_operations(downstream.usage_key.context_key):
             upstream_children = sync_from_upstream_container(downstream=downstream, user=request.user)
             downstream_children = downstream.get_children()
-            downstream_children_keys = [child.upstream for child in downstream_children]
+            downstream_children_key_strings: list[str] = [child.upstream for child in downstream_children]
             # Sync the children:
             notices = []
             # Store final children keys to update order of items in containers
@@ -669,22 +665,19 @@ def sync_library_content(
 
             for i, upstream_child in enumerate(upstream_children):
                 if isinstance(upstream_child, LibraryXBlockMetadata):
-                    upstream_key = str(upstream_child.usage_key)
+                    upstream_child_key_string = str(upstream_child.usage_key)
                     block_type = upstream_child.usage_key.block_type
                 elif isinstance(upstream_child, ContainerMetadata):
-                    upstream_key = str(upstream_child.container_key)
-                    match upstream_child.container_type:
-                        case ContainerType.Unit:
-                            block_type = "vertical"
-                        case ContainerType.Subsection:
-                            block_type = "sequential"
-                        case _:
-                            # We don't support other container types for now.
-                            log.error(
-                                "Unexpected upstream child container type: %s",
-                                upstream_child.container_type,
-                            )
-                            continue
+                    upstream_child_key_string = str(upstream_child.container_key)
+                    if upstream_child.container_type_code not in (
+                        content_models.Unit.type_code,
+                        content_models.Subsection.type_code,
+                    ):
+                        # We don't support other container types for now.
+                        log.error("Unexpected upstream child container type: %s", upstream_child.container_type_code)
+                        continue
+                    # convert "unit" -> "vertical", "subsection" -> "sequential"
+                    block_type = content_api.get_container_subclass(upstream_child.container_type_code).olx_tag_name
                 else:
                     log.error(
                         "Unexpected type of upstream child: %s",
@@ -692,7 +685,7 @@ def sync_library_content(
                     )
                     continue
 
-                if upstream_key not in downstream_children_keys:
+                if upstream_child_key_string not in downstream_children_key_strings:
                     # This upstream_child is new, create it.
                     downstream_child = store.create_child(
                         parent_usage_key=downstream.usage_key,
@@ -702,14 +695,14 @@ def sync_library_content(
                         # TODO: Can we generate a unique but friendly block_id, perhaps using upstream block_id
                         block_id=f"{block_type}{uuid4().hex[:8]}",
                         fields={
-                            "upstream": upstream_key,
+                            "upstream": upstream_child_key_string,
                             "top_level_downstream_parent_key": get_block_key_string(
                                 top_level_downstream_parent.usage_key,
                             ),
                         },
                     )
                 else:
-                    downstream_child_old_index = downstream_children_keys.index(upstream_key)
+                    downstream_child_old_index = downstream_children_key_strings.index(upstream_child_key_string)
                     downstream_child = downstream_children[downstream_child_old_index]
 
                 children.append(downstream_child.usage_key)
@@ -1313,7 +1306,7 @@ def create_xblock_info(  # lint-amnesty, pylint: disable=too-many-statements
                 "studio_url": xblock_studio_url(xblock, parent_xblock),
                 "lms_url": xblock_lms_url(xblock),
                 "embed_lms_url": xblock_embed_lms_url(xblock),
-                "released_to_students": datetime.now(UTC) > xblock.start,
+                "released_to_students": datetime.now(timezone.utc) > xblock.start,
                 "release_date": release_date,
                 "visibility_state": visibility_state,
                 "has_explicit_staff_lock": xblock.fields[
@@ -1652,7 +1645,7 @@ def _compute_visibility_state(
         return VisibilityState.needs_attention
 
     is_unscheduled = xblock.start == DEFAULT_START_DATE
-    is_live = is_course_self_paced or datetime.now(UTC) > xblock.start
+    is_live = is_course_self_paced or datetime.now(timezone.utc) > xblock.start
     if child_info and child_info.get("children", []):  # pylint: disable=too-many-nested-blocks
         all_staff_only = True
         all_unscheduled = True

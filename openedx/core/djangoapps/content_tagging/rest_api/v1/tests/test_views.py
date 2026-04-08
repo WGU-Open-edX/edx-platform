@@ -7,20 +7,23 @@ from __future__ import annotations
 import abc
 import json
 from io import BytesIO
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import ddt
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
 from edx_django_utils.cache import RequestCache
 from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator, LibraryCollectionLocator, LibraryContainerLocator
+from openedx_authz.constants import permissions as authz_permissions
+from openedx_authz.constants.roles import COURSE_STAFF
 from openedx_tagging.models import Tag, Taxonomy
 from openedx_tagging.models.system_defined import SystemDefinedTaxonomy
 from openedx_tagging.rest_api.v1.serializers import TaxonomySerializer
 from organizations.models import Organization
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from common.djangoapps.student.auth import add_users, update_org_role
 from common.djangoapps.student.roles import (
@@ -29,13 +32,16 @@ from common.djangoapps.student.roles import (
     OrgContentCreatorRole,
     OrgInstructorRole,
     OrgLibraryUserRole,
-    OrgStaffRole
+    OrgStaffRole,
 )
-from common.djangoapps.student.tests.factories import UserFactory
+from common.djangoapps.student.tests.factories import StaffFactory, UserFactory
+from openedx.core.djangoapps.authz.tests.mixins import CourseAuthzTestMixin
 from openedx.core.djangoapps.content_libraries.api import AccessLevel, create_library, set_library_user_permissions
 from openedx.core.djangoapps.content_tagging import api as tagging_api
 from openedx.core.djangoapps.content_tagging.models import TaxonomyOrg
 from openedx.core.djangolib.testing.utils import skip_unless_cms
+from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
+from xmodule.modulestore.tests.factories import CourseFactory
 
 from ....tests.test_objecttag_export_helpers import TaggedCourseMixin
 
@@ -1624,6 +1630,35 @@ class TestObjectTagViewSet(TestObjectTagMixin, APITestCase):
             assert status.is_success(new_response.status_code)
             assert new_response.data == response.data
 
+    @ddt.data("libraryA", "collection_key", "container_key")
+    @patch("openedx_authz.api.is_user_allowed")
+    @patch("openedx.core.djangoapps.content_tagging.rules.has_studio_write_access")
+    def test_tag_library_objects_with_manage_library_tags_permission(
+        self,
+        object_attr,
+        mock_has_studio_write_access,
+        mock_is_user_allowed,
+    ):
+        """
+        Users with MANAGE_LIBRARY_TAGS permission should be able to tag:
+        - the library itself
+        - collections in the library
+        - containers in the library
+        """
+        mock_is_user_allowed.return_value = True
+        object_id = getattr(self, object_attr)
+
+        self.client.force_authenticate(user=self.library_userA)
+        response = self._call_put_request(object_id, self.tA1.pk, ["Tag 1"])
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_is_user_allowed.assert_called_with(
+            self.library_userA.username,
+            authz_permissions.MANAGE_LIBRARY_TAGS.identifier,
+            self.libraryA,
+        )
+        mock_has_studio_write_access.assert_not_called()
+
     @ddt.data(
         "staffA",
         "staff",
@@ -1945,15 +1980,15 @@ class TestObjectTagViewSet(TestObjectTagMixin, APITestCase):
 
     @ddt.data(
         ('staff', 'courseA', 8),
-        ('staff', 'libraryA', 8),
-        ('staff', 'collection_key', 8),
+        ('staff', 'libraryA', 17),
+        ('staff', 'collection_key', 17),
         ("content_creatorA", 'courseA', 18, False),
-        ("content_creatorA", 'libraryA', 18, False),
-        ("content_creatorA", 'collection_key', 18, False),
-        ("library_staffA", 'libraryA', 18, False),  # Library users can only view objecttags, not change them?
-        ("library_staffA", 'collection_key', 18, False),
-        ("library_userA", 'libraryA', 18, False),
-        ("library_userA", 'collection_key', 18, False),
+        ("content_creatorA", 'libraryA', 23, False),
+        ("content_creatorA", 'collection_key', 23, False),
+        ("library_staffA", 'libraryA', 23, False),  # Library users can only view objecttags, not change them?
+        ("library_staffA", 'collection_key', 23, False),
+        ("library_userA", 'libraryA', 23, False),
+        ("library_userA", 'collection_key', 23, False),
         ("instructorA", 'courseA', 18),
         ("course_instructorA", 'courseA', 18),
         ("course_staffA", 'courseA', 18),
@@ -2051,6 +2086,55 @@ class TestContentObjectChildrenExportView(TaggedCourseMixin, APITestCase):  # ty
         response = self.client.get(url)
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+@skip_unless_cms
+class TestContentObjectChildrenExportViewWithAuthz(CourseAuthzTestMixin, SharedModuleStoreTestCase, APITestCase):
+    """
+    Tests Tags Export in Course authorization using openedx-authz.
+    """
+
+    authz_roles_to_assign = [COURSE_STAFF.external_key]
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.password = 'test'
+        cls.course = CourseFactory.create()
+        cls.course_key = cls.course.id
+        cls.staff = StaffFactory(course_key=cls.course_key, password=cls.password)
+
+    def get_url(self, course_key):
+        return reverse('content_tagging:taxonomy-object-tag-export', kwargs={'context_id': course_key})
+
+    def test_authorized_user_can_access(self):
+        """User with COURSE_STAFF role can access."""
+        resp = self.authorized_client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_unauthorized_user_cannot_access(self):
+        """User without role cannot access."""
+        resp = self.unauthorized_client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_role_scoped_to_course(self):
+        """Authorization should only apply to the assigned course."""
+        other_course = self.store.create_course("OtherOrg", "OtherCourse", "Run", self.staff.id)
+
+        resp = self.authorized_client.get(self.get_url(other_course.id))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_user_allowed_via_legacy(self):
+        """Staff users should still pass through legacy fallback."""
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_superuser_allowed(self):
+        """Superusers should always be allowed."""
+        superuser = UserFactory(is_superuser=True)
+        client = APIClient()
+        client.force_authenticate(user=superuser)
+        resp = client.get(self.get_url(self.course_key))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
 @skip_unless_cms
 @ddt.ddt

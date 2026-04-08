@@ -4,14 +4,13 @@ Tests for the Studio Tagging XBlockAside
 
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from io import StringIO
 
 import ddt
 from django.test.client import RequestFactory
 from lxml import etree
 from opaque_keys.edx.asides import AsideUsageKeyV1, AsideUsageKeyV2
-from pytz import UTC
 from xblock.fields import ScopeIds
 from xblock.runtime import DictKeyValueStore, KvsFieldData
 from xblock.test.tools import TestRuntime
@@ -25,8 +24,13 @@ from cms.lib.xblock.tagging.models import TagAvailableValues, TagCategories
 from common.djangoapps.student.tests.factories import UserFactory
 from xmodule.modulestore import ModuleStoreEnum  # lint-amnesty, pylint: disable=wrong-import-order
 from xmodule.modulestore.django import modulestore  # lint-amnesty, pylint: disable=wrong-import-order
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase  # lint-amnesty, pylint: disable=wrong-import-order
-from xmodule.modulestore.tests.factories import CourseFactory, BlockFactory  # lint-amnesty, pylint: disable=wrong-import-order
+from xmodule.modulestore.tests.django_utils import (
+    ModuleStoreTestCase,  # lint-amnesty, pylint: disable=wrong-import-order
+)
+from xmodule.modulestore.tests.factories import (  # lint-amnesty, pylint: disable=wrong-import-order
+    BlockFactory,
+    CourseFactory,
+)
 
 
 @ddt.ddt
@@ -56,21 +60,21 @@ class StructuredTagsAsideTestCase(ModuleStoreTestCase):
             category='chapter',
             display_name="Week 1",
             publish_item=True,
-            start=datetime(2015, 3, 1, tzinfo=UTC),
+            start=datetime(2015, 3, 1, tzinfo=timezone.utc),
         )
         self.sequential = BlockFactory.create(
             parent_location=self.chapter.location,
             category='sequential',
             display_name="Lesson 1",
             publish_item=True,
-            start=datetime(2015, 3, 1, tzinfo=UTC),
+            start=datetime(2015, 3, 1, tzinfo=timezone.utc),
         )
         self.vertical = BlockFactory.create(
             parent_location=self.sequential.location,
             category='vertical',
             display_name='Subsection 1',
             publish_item=True,
-            start=datetime(2015, 4, 1, tzinfo=UTC),
+            start=datetime(2015, 4, 1, tzinfo=timezone.utc),
         )
         self.problem = BlockFactory.create(
             category="problem",

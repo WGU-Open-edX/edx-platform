@@ -14,9 +14,8 @@ from copy import deepcopy
 from functools import partial
 from logging import getLogger
 
-from xmodule.block_metadata_utils import get_datetime_field
-
 from openedx.core.lib.graph_traversals import traverse_post_order, traverse_topologically
+from xmodule.block_metadata_utils import get_datetime_field
 
 from .exceptions import TransformerException
 
@@ -392,6 +391,10 @@ class BlockData(FieldData):
 
         # Map of transformer name to its block-specific data.
         self.transformer_data = TransformerDataMap()
+
+    @property
+    def usage_key(self):
+        return self.location
 
 
 class BlockStructureBlockData(BlockStructure):
