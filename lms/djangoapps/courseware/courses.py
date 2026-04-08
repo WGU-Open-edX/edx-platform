@@ -216,9 +216,9 @@ def check_course_access(
 
     non_staff_access_response = _check_nonstaff_access()
     if core_toggles.enable_authz_course_authoring(course.id):
-         # If AuthZ is enabled for this course, it checks already
-         # permissions for staff.
-         return non_staff_access_response
+        # If AuthZ is enabled for this course, it checks already
+        # permissions for staff.
+        return non_staff_access_response
 
     # User has course access OR access error is a priority error
     if non_staff_access_response or is_priority_access_error(non_staff_access_response):

@@ -150,10 +150,6 @@ class TestGetCourseDetailAuthz(
             visible_to_staff_only=True
         )
 
-        cls.authorized_user = cls.create_user('authorized', is_staff=False)
-        cls.unauthorized_user = cls.create_user('unauthorized', is_staff=False)
-        cls.staff_user = cls.create_user('staff', is_staff=True)
-
     def test_get_existing_course_as_authorized_user(self):
         """User with COURSE_EDITOR role can access course."""
         self.add_user_to_role_in_course(

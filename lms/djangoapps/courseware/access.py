@@ -456,7 +456,7 @@ def _has_access_course(user, action, courselike):
         """
         if user and not user.is_anonymous and core_toggles.enable_authz_course_authoring(courselike.id):
             is_authz_allowed = user_has_course_permission(user, COURSES_VIEW_COURSE.identifier, courselike.id)
-            return ACCESS_GRANTED if is_authz_allowed else ACCESS_DENIED
+            return ACCESS_GRANTED if is_authz_allowed else CatalogVisibilityError()
         return legacy_can_see_about_page()
 
     checkers = {
