@@ -16,7 +16,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
 
-from lms.djangoapps.courseware.courseware_access_exception import CoursewareAccessException
+from lms.djangoapps.courseware.exceptions import CourseAccessRedirect
 from openedx.core.djangoapps.authz.tests.mixins import CourseAuthoringAuthzTestMixin
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from xmodule.modulestore.exceptions import ItemNotFoundError  # lint-amnesty, pylint: disable=wrong-import-order
@@ -168,7 +168,7 @@ class TestGetCourseDetailAuthz(
 
     def test_get_existing_course_as_unauthorized_user(self):
         """User without role should be denied."""
-        with pytest.raises(CoursewareAccessException):
+        with pytest.raises(CourseAccessRedirect):
             self._make_api_call(
                 self.unauthorized_user,
                 self.unauthorized_user,
@@ -204,7 +204,7 @@ class TestGetCourseDetailAuthz(
         Staff requesting data for another user without permissions
         should not bypass visibility rules.
         """
-        with pytest.raises(Http404):
+        with pytest.raises(CourseAccessRedirect):
             self._make_api_call(
                 self.staff_user,
                 self.unauthorized_user,
@@ -213,7 +213,7 @@ class TestGetCourseDetailAuthz(
 
     def test_user_gains_access_after_role_assignment(self):
         """User initially denied, then allowed after role assignment."""
-        with pytest.raises(CoursewareAccessException):
+        with pytest.raises(CourseAccessRedirect):
             self._make_api_call(
                 self.unauthorized_user,
                 self.unauthorized_user,
