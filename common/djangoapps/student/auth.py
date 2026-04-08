@@ -251,9 +251,16 @@ def is_content_creator(user, org):
 
 
 def _has_content_creator_access(user, org):
+    """
+    Check if the user has content creator access based on AuthZ permissions.
+    """
     if settings.FEATURES.get('DISABLE_COURSE_CREATION', False):
         return False
     org_scope_key = f"course-v1:{org}+*"
+
+    # TODO: We should be checking for the COURSES_CREATE_COURSE permission here,
+    # but since we don't have that linked to a role yet, we'll check for edit content
+    # permission for now, which is a superset of create course content permission.
     return authz_api.is_user_allowed(
         user.username,
         COURSES_EDIT_COURSE_CONTENT.identifier,

@@ -62,7 +62,6 @@ from lms.djangoapps.courseware.model_data import FieldDataCache
 from lms.djangoapps.courseware.utils import is_empty_html
 from lms.djangoapps.grades.api import CourseGradeFactory
 from lms.djangoapps.survey.utils import SurveyRequiredAccessError, check_survey_required_and_unanswered
-from openedx.core import toggles as core_toggles
 from openedx.core.djangoapps.content.block_structure.api import get_block_structure_manager
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.enrollments.api import get_course_enrollment_details
@@ -215,10 +214,6 @@ def check_course_access(
         return access_response
 
     non_staff_access_response = _check_nonstaff_access()
-    if core_toggles.enable_authz_course_authoring(course.id):
-        # If AuthZ is enabled for this course, it checks already
-        # permissions for staff.
-        return non_staff_access_response
 
     # User has course access OR access error is a priority error
     if non_staff_access_response or is_priority_access_error(non_staff_access_response):
