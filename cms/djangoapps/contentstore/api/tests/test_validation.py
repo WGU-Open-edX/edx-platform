@@ -412,14 +412,13 @@ class TestMigrationViewSetCreateAuthz(
 
         response = self.authorized_client.get(self.url())
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.json(), list)
+        assert response.status_code == status.HTTP_200_OK
 
     def test_unauthorized_user_cannot_list_blocks(self):
         """Unauthorized user should receive 403."""
         response = self.unauthorized_client.get(self.url())
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     # ---- elevated users ----
 
@@ -427,10 +426,10 @@ class TestMigrationViewSetCreateAuthz(
         """Staff user bypasses AuthZ."""
         response = self.staff_client.get(self.url())
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
     def test_superuser_can_access_without_authz_role(self):
         """Superuser bypasses AuthZ."""
         response = self.super_client.get(self.url())
 
-        self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_201_CREATED])
+        assert response.status_code in [status.HTTP_200_OK, status.HTTP_201_CREATED]

@@ -188,19 +188,19 @@ class CourseIndexAuthzViewTest(CourseAuthoringAuthzTestMixin, CourseTestCase):
 
         response = self.authorized_client.get(self.url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("course_structure", response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert "course_structure" in response.data
 
     def test_unauthorized_user_cannot_access_course_index(self):
         """Unauthorized user should receive 403."""
         response = self.unauthorized_client.get(self.url)
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_user_without_role_then_added_can_access(self):
         """Validate dynamic role assignment works as expected."""
         response = self.unauthorized_client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
         self.add_user_to_role_in_course(
             self.unauthorized_user,
@@ -209,18 +209,18 @@ class CourseIndexAuthzViewTest(CourseAuthoringAuthzTestMixin, CourseTestCase):
         )
 
         response = self.unauthorized_client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
     def test_staff_user_can_access_without_authz_role(self):
         """Django staff user should access without AuthZ role."""
         response = self.staff_client.get(self.url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("course_structure", response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert "course_structure" in response.data
 
     def test_superuser_can_access_without_authz_role(self):
         """Superuser should access without AuthZ role."""
         response = self.super_client.get(self.url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("course_structure", response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert "course_structure" in response.data

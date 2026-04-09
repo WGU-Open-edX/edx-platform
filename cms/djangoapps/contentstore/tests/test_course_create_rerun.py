@@ -434,7 +434,7 @@ class TestCourseHandlerAuthz(
             "run": "2026_T1",
         })
 
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
 
     @override_settings(FEATURES={"DISABLE_COURSE_CREATION": False})
     def test_create_course_unauthorized_with_role(self):
@@ -455,7 +455,7 @@ class TestCourseHandlerAuthz(
             "run": "2026_T1",
         })
 
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403
 
     # ------------------------------------------------------------
     # CREATE COURSE -- Staff users
@@ -473,7 +473,7 @@ class TestCourseHandlerAuthz(
             "run": "2026_T1",
         })
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
 
     # ------------------------------------------------------------
     # FEATURE FLAG
@@ -497,4 +497,4 @@ class TestCourseHandlerAuthz(
             "run": "2026_T1",
         })
 
-        self.assertEqual(response.status_code, 403)
+        assert response.status_code == 403

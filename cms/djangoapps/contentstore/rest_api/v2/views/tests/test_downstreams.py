@@ -1544,19 +1544,19 @@ class GetDownstreamSummaryAuthzViewTest(
 
         response = self.call_api(self.authorized_client, str(self.course.id))
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.json(), list)
+        assert response.status_code == status.HTTP_200_OK
+        assert isinstance(response.json(), list)
 
     def test_unauthorized_user_cannot_access_summary(self):
         """Unauthorized user should receive 403."""
         response = self.call_api(self.unauthorized_client, str(self.course.id))
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_user_without_role_then_added_can_access(self):
         """Validate dynamic role assignment works."""
         response = self.call_api(self.unauthorized_client, str(self.course.id))
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
         self.add_user_to_role_in_course(
             self.unauthorized_user,
@@ -1565,21 +1565,21 @@ class GetDownstreamSummaryAuthzViewTest(
         )
 
         response = self.call_api(self.unauthorized_client, str(self.course.id))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
     def test_staff_user_can_access_without_authz_role(self):
         """Staff user should access without explicit AuthZ role."""
         response = self.call_api(self.staff_client, str(self.course.id))
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.json(), list)
+        assert response.status_code == status.HTTP_200_OK
+        assert isinstance(response.json(), list)
 
     def test_superuser_can_access_without_authz_role(self):
         """Superuser should access without explicit AuthZ role."""
         response = self.call_api(self.super_client, str(self.course.id))
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.json(), list)
+        assert response.status_code == status.HTTP_200_OK
+        assert isinstance(response.json(), list)
 
 
 class GetDownstreamDeletedUpstream(
