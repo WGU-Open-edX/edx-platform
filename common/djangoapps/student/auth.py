@@ -11,7 +11,7 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from opaque_keys.edx.locator import LibraryLocator
 from openedx_authz import api as authz_api
-from openedx_authz.constants.permissions import COURSES_EDIT_COURSE_CONTENT, COURSES_MANAGE_ADVANCED_SETTINGS
+from openedx_authz.constants.permissions import COURSES_CREATE_COURSE, COURSES_MANAGE_ADVANCED_SETTINGS
 
 from common.djangoapps.student.roles import (
     CourseBetaTesterRole,
@@ -258,12 +258,9 @@ def _has_content_creator_access(user, org):
         return False
     org_scope_key = f"course-v1:{org}+*"
 
-    # TODO: We should be checking for the COURSES_CREATE_COURSE permission here,
-    # but since we don't have that linked to a role yet, we'll check for edit content
-    # permission for now, which is a superset of create course content permission.
     return authz_api.is_user_allowed(
         user.username,
-        COURSES_EDIT_COURSE_CONTENT.identifier,
+        COURSES_CREATE_COURSE.identifier,
         org_scope_key
     )
 

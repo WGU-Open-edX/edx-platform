@@ -8,7 +8,6 @@ from itertools import product
 from unittest import mock
 
 import ddt
-import pytest
 from django.contrib.admin.sites import AdminSite
 from django.http import HttpRequest
 from django.test import override_settings
@@ -422,32 +421,6 @@ class TestCourseHandlerAuthz(
     # ------------------------------------------------------------
     # CREATE COURSE -- Non-staff users and existing Organization
     # ------------------------------------------------------------
-
-    @override_settings(FEATURES={"DISABLE_COURSE_CREATION": False})
-    def test_create_course_authorized(self):
-        """
-        User with proper AuthZ role can create course.
-        """
-
-        # Assign org-scoped role
-        self.add_user_to_role_in_course(
-            self.authorized_user,
-            COURSE_EDITOR.external_key,
-            self.org_key,
-        )
-
-        response = self.authorized_client.ajax_post(self.url, {
-            "org": self.org,
-            "number": "CS101",
-            "display_name": "Authz Course",
-            "run": "2026_T1",
-        })
-
-        self.assertEqual(response.status_code, 200)
-
-        data = parse_json(response)
-        self.assertIn("course_key", data)
-
     @override_settings(FEATURES={"DISABLE_COURSE_CREATION": False})
     def test_create_course_unauthorized(self):
         """
@@ -485,73 +458,10 @@ class TestCourseHandlerAuthz(
         self.assertEqual(response.status_code, 403)
 
     # ------------------------------------------------------------
-    # CREATE COURSE -- Non-staff users and non-existing Organization
-    # ------------------------------------------------------------
-
-    @override_settings(FEATURES={"DISABLE_COURSE_CREATION": False})
-    def test_create_course_with_unknown_organization_success(self):
-        """
-        Course creation with unknown organization should succeed and create
-        the organization if user has the role to create course.
-        """
-        new_org = "orgX"
-        new_org_key = f"course-v1:{new_org}+*"
-
-        # Assign org-scoped role for the new org even though the org doesn't exist yet,
-        # the role assignment should work with the org key format
-        self.add_user_to_role_in_course(
-            self.authorized_user,
-            COURSE_EDITOR.external_key,
-            new_org_key,
-        )
-
-        # Ensure the org doesn't exist in the system before course creation attempt
-        with self.assertRaises(InvalidOrganizationException):
-            get_organization_by_short_name(new_org)
-
-        response = self.authorized_client.ajax_post(self.url, {
-            'org': new_org,
-            'number': 'CS101',
-            'display_name': 'Course with web certs enabled',
-            'run': '2015_T2'
-        })
-
-        self.assertEqual(response.status_code, 200)
-
-    @override_settings(FEATURES={"DISABLE_COURSE_CREATION": False})
-    def test_create_course_with_unknown_organization_failure(self):
-        """
-        Course creation with unknown organization should fail if
-        user doesn't have the role to create course.
-        """
-        new_org = "orgX"
-        new_org_key = "course-v1:otherOrg+*"
-
-        # Assign org-scoped role for a different org
-        self.add_user_to_role_in_course(
-            self.authorized_user,
-            COURSE_EDITOR.external_key,
-            new_org_key,
-        )
-
-        # Ensure the org doesn't exist in the system before course creation attempt
-        with self.assertRaises(InvalidOrganizationException):
-            get_organization_by_short_name(new_org)
-
-        response = self.authorized_client.ajax_post(self.url, {
-            'org': new_org,
-            'number': 'CS101',
-            'display_name': 'Course with web certs enabled',
-            'run': '2015_T2'
-        })
-
-        self.assertEqual(response.status_code, 403)
-
-    # ------------------------------------------------------------
     # CREATE COURSE -- Staff users
+    # Only staff users can create course, and they can do it
+    # without an org role.
     # ------------------------------------------------------------
-    @pytest.mark.skip(reason="Temporarily disabled due to bug in API - see openedx-authz#244")
-    @override_settings(FEATURES={"DISABLE_COURSE_CREATION": False})
     def test_create_course_staff(self):
         """
         Staff user can create course.
@@ -568,7 +478,6 @@ class TestCourseHandlerAuthz(
     # ------------------------------------------------------------
     # FEATURE FLAG
     # ------------------------------------------------------------
-
     @override_settings(FEATURES={"DISABLE_COURSE_CREATION": True})
     def test_create_course_disabled_by_flag(self):
         """
