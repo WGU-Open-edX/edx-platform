@@ -427,6 +427,7 @@ edx-ccx-keys==2.0.2
     # via
     #   -r requirements/edx/kernel.in
     #   lti-consumer-xblock
+    #   openedx-authz
     #   openedx-events
 edx-celeryutils==1.4.0
     # via

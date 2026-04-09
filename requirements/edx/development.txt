@@ -698,6 +698,7 @@ edx-ccx-keys==2.0.2
     #   -r requirements/edx/doc.txt
     #   -r requirements/edx/testing.txt
     #   lti-consumer-xblock
+    #   openedx-authz
     #   openedx-events
 edx-celeryutils==1.4.0
     # via
