@@ -1118,6 +1118,8 @@ class ORASummaryView(GenericAPIView):
 
         serializer = self.get_serializer(items)
         return Response(serializer.data)
+
+
 class IssuedCertificatesView(ListAPIView):
     """
     View to retrieve issued certificates for a course with allowlist and invalidation details.
@@ -1178,7 +1180,7 @@ class IssuedCertificatesView(ListAPIView):
     permission_name = permissions.VIEW_ISSUED_CERTIFICATES
     serializer_class = IssuedCertificateSerializer
 
-    def _apply_certificate_status_filter(self, certificates, filter_type, cert_statuses):
+    def _apply_certificate_status_filter(self, certificates, filter_type, cert_statuses, course_key):
         """Apply status-based filters to certificate queryset."""
         if filter_type == "received":
             return certificates.filter(status=cert_statuses.downloadable)
@@ -1192,69 +1194,68 @@ class IssuedCertificatesView(ListAPIView):
             return certificates.filter(status=cert_statuses.audit_notpassing)
         elif filter_type == "error":
             return certificates.filter(status=cert_statuses.error)
+        elif filter_type == "granted_exceptions":
+            return certificates.filter(
+                user_id__in=CertificateAllowlist.objects.filter(
+                    course_id=course_key, allowlist=True
+                ).values_list('user_id', flat=True)
+            )
+        elif filter_type == "invalidated":
+            return certificates.filter(
+                user_id__in=CertificateInvalidation.objects.filter(
+                    generated_certificate__course_id=course_key, active=True
+                ).values_list('generated_certificate__user_id', flat=True)
+            )
         return certificates
 
-    def _get_allowlist_dict(self, course_key, cert_allowlist):
-        """Get allowlist entries as a dictionary keyed by user_id."""
-        allowlist_dict = {}
-        allowlist_entries = cert_allowlist.objects.filter(
+    def get_serializer_context(self):
+        """
+        Provide enrollment, allowlist, and invalidation data in serializer context.
+        """
+        context = super().get_serializer_context()
+        course_id = self.kwargs["course_id"]
+        course_key = CourseKey.from_string(course_id)
+
+        # Get enrollment data
+        enrollments = CourseEnrollment.objects.filter(
+            course_id=course_key
+        ).select_related('user')
+        context['enrollment_dict'] = {e.user_id: e.mode for e in enrollments}
+
+        # Get allowlist data
+        allowlist_entries = CertificateAllowlist.objects.filter(
             course_id=course_key,
             allowlist=True
         ).select_related('user')
-
-        for entry in allowlist_entries:
-            allowlist_dict[entry.user_id] = {
+        context['allowlist_dict'] = {
+            entry.user_id: {
                 'created': entry.created.isoformat(),
                 'notes': entry.notes or ''
             }
-        return allowlist_dict
+            for entry in allowlist_entries
+        }
 
-    def _get_invalidation_dict(self, course_key, cert_invalidation):
-        """Get invalidation entries as a dictionary keyed by user_id."""
-        invalidation_dict = {}
-        invalidations = cert_invalidation.objects.filter(
+        # Get invalidation data
+        invalidations = CertificateInvalidation.objects.filter(
             generated_certificate__course_id=course_key,
             active=True
         ).select_related('generated_certificate__user', 'invalidated_by')
-
-        for inv in invalidations:
-            invalidation_dict[inv.generated_certificate.user_id] = {
+        context['invalidation_dict'] = {
+            inv.generated_certificate.user_id: {
                 'invalidated_by': inv.invalidated_by.email,
                 'created': inv.created.isoformat()
             }
-        return invalidation_dict
-
-    def _build_certificate_result(self, cert, enrollment_dict, allowlist_dict, invalidation_dict):
-        """Build result dictionary for a single certificate."""
-        user = cert.user
-        allowlist_info = allowlist_dict.get(user.id)
-        invalidation_info = invalidation_dict.get(user.id)
-
-        # Determine special case
-        special_case = None
-        if allowlist_info:
-            special_case = "Exception"
-        elif invalidation_info:
-            special_case = "Invalidation"
-
-        return {
-            'username': user.username,
-            'email': user.email,
-            'enrollment_track': enrollment_dict.get(user.id, 'TBD'),
-            'certificate_status': cert.status,
-            'special_case': special_case,
-            'exception_granted': allowlist_info['created'] if allowlist_info else None,
-            'exception_notes': allowlist_info['notes'] if allowlist_info else None,
-            'invalidated_by': invalidation_info['invalidated_by'] if invalidation_info else None,
-            'invalidation_date': invalidation_info['created'] if invalidation_info else None,
+            for inv in invalidations
         }
+
+        return context
 
     def get_queryset(self):
         """
         Returns the queryset of issued certificates for the course.
 
         This method returns a Django QuerySet that will be further processed
-        by the list() method to build the final response data.
+        by DRF's default pagination.
         """
         course_id = self.kwargs["course_id"]
         course_key = CourseKey.from_string(course_id)
@@ -1288,63 +1289,13 @@ class IssuedCertificatesView(ListAPIView):
             course_key, filter_type
         )
 
-        # Apply filter based on filter type
-        certificates = self._apply_certificate_status_filter(certificates, filter_type, CertificateStatuses)
+        # Apply filter based on filter type (includes granted_exceptions and invalidated)
+        certificates = self._apply_certificate_status_filter(
+            certificates, filter_type, CertificateStatuses, course_key
+        )
 
-        return certificates
-
-    def list(self, request, *args, **kwargs):
-        """
-        Override list method to process certificates and return paginated results.
-        """
-        course_id = self.kwargs["course_id"]
-        course_key = CourseKey.from_string(course_id)
-
-        # Get the certificate queryset
-        queryset = self.filter_queryset(self.get_queryset())
-
-        # Get query parameters
-        filter_type = self.request.query_params.get("filter", "all")
-
-        # Get related data
-        allowlist_dict = self._get_allowlist_dict(course_key, CertificateAllowlist)
-        invalidation_dict = self._get_invalidation_dict(course_key, CertificateInvalidation)
-
-        # Get enrollment data
-        enrollments = CourseEnrollment.objects.filter(
-            course_id=course_key
-        ).select_related('user')
-        enrollment_dict = {e.user_id: e.mode for e in enrollments}
-
-        # Build result list
-        results = []
-        for cert in queryset:
-            user = cert.user
-
-            # Apply special case filters that can't be done at database level
-            allowlist_info = allowlist_dict.get(user.id)
-            invalidation_info = invalidation_dict.get(user.id)
-
-            if filter_type == "granted_exceptions" and not allowlist_info:
-                continue
-            elif filter_type == "invalidated" and not invalidation_info:
-                continue
-
-            results.append(self._build_certificate_result(
-                cert, enrollment_dict, allowlist_dict, invalidation_dict
-            ))
-
-        # Sort by username
-        results.sort(key=lambda x: x['username'])
-
-        # Apply pagination
-        page = self.paginate_queryset(results)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(results, many=True)
-        return Response(serializer.data)
+        # Order by username for consistent pagination
+        return certificates.order_by('user__username')
 
 
 class CertificateGenerationHistoryView(ListAPIView):
@@ -1398,8 +1349,7 @@ class CertificateGenerationHistoryView(ListAPIView):
         """
         Returns the queryset of certificate generation history.
 
-        This method returns a Django QuerySet that will be further processed
-        by the list() method to build the final response data.
+        This method returns a Django QuerySet that will be paginated by DRF.
         """
         course_id = self.kwargs["course_id"]
         course_key = CourseKey.from_string(course_id)
@@ -1407,55 +1357,10 @@ class CertificateGenerationHistoryView(ListAPIView):
         # Validate that the course exists
         get_course_by_id(course_key)
 
-        # Get generation history
-        history = CertificateGenerationHistory.objects.filter(
+        # Get generation history ordered by creation date
+        return CertificateGenerationHistory.objects.filter(
             course_id=course_key
         ).select_related('generated_by', 'instructor_task').order_by('-created')
-
-        return history
-
-    def _process_history_entry(self, entry):
-        """
-        Process a single certificate generation history entry into a result dictionary.
-
-        Args:
-            entry: CertificateGenerationHistory instance
-
-        Returns:
-            dict: Processed history entry with task_name, date (ISO 8601), and details
-        """
-        # Determine task name
-        task_name = "Regenerated" if entry.is_regeneration else "Generated"
-
-        # Format date in ISO 8601 format for frontend to handle display formatting
-        date = entry.created.isoformat()
-
-        # Get details about what was generated/regenerated
-        details = str(entry.get_certificate_generation_candidates())
-
-        return {
-            'task_name': task_name,
-            'date': date,
-            'details': details,
-        }
-
-    def list(self, request, *args, **kwargs):
-        """
-        Override list method to process history entries and return paginated results.
-        """
-        queryset = self.filter_queryset(self.get_queryset())
-
-        # Build result list
-        results = [self._process_history_entry(entry) for entry in queryset]
-
-        # Apply pagination
-        page = self.paginate_queryset(results)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(results, many=True)
-        return Response(serializer.data)
 
 
 @method_decorator(cache_control(no_cache=True, no_store=True, must_revalidate=True), name='dispatch')
@@ -1524,7 +1429,7 @@ class RegenerateCertificatesView(DeveloperErrorViewMixin, APIView):
         Initiate certificate regeneration for a course.
         """
         course_key = CourseKey.from_string(course_id)
-        course = get_course_by_id(course_key)
+        get_course_by_id(course_key)
 
         serializer = RegenerateCertificatesSerializer(data=request.data)
         if not serializer.is_valid():
@@ -1565,7 +1470,7 @@ class RegenerateCertificatesView(DeveloperErrorViewMixin, APIView):
             }, status=status.HTTP_200_OK)
 
         except (AlreadyRunningError, QueueConnectionError) as exc:
-            log.error(f"Error starting certificate regeneration: {exc}")
+            log.error("Error starting certificate regeneration: %s", exc)
             return Response(
                 {'error': str(exc)},
                 status=status.HTTP_400_BAD_REQUEST
@@ -1623,8 +1528,8 @@ class CertificateConfigView(DeveloperErrorViewMixin, APIView):
         # Validate that the course exists
         get_course_by_id(course_key)
 
-        # Check if certificate generation is enabled
-        enabled = certs_api.is_certificate_generation_enabled()
+        # Check if certificate generation is enabled (not available for CCX courses)
+        enabled = certs_api.is_certificate_generation_enabled() and not hasattr(course_key, 'ccx')
 
         return Response({'enabled': enabled}, status=status.HTTP_200_OK)
 
