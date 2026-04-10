@@ -1921,6 +1921,7 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         mock_queryset = Mock()
         mock_queryset.select_related.return_value = mock_queryset
         mock_queryset.filter.return_value = mock_queryset
+        mock_queryset.order_by.return_value = mock_queryset
         mock_queryset.count.return_value = 0
         mock_queryset.__iter__ = Mock(return_value=iter([]))
         mock_filter.return_value = mock_queryset
@@ -2058,9 +2059,11 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         mock_entry.created = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)
         mock_entry.get_certificate_generation_candidates.return_value = "audit not passing states"
 
+        # Create a mock queryset that behaves like a list for pagination
+        mock_result_list = [mock_entry]
         mock_queryset = Mock()
         mock_queryset.select_related.return_value = mock_queryset
-        mock_queryset.order_by.return_value = [mock_entry]
+        mock_queryset.order_by.return_value = mock_result_list
         mock_filter.return_value = mock_queryset
 
         self.client.force_authenticate(user=self.instructor)
