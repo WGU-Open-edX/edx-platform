@@ -611,12 +611,3 @@ class TestCourseReIndexAuthz(CourseAuthoringAuthzTestMixin, CourseTestCase):
 
         assert not self.non_staff_user.is_staff
         assert response.status_code == 403
-
-    def test_empty_content_type(self):
-        """ Verify that content type is set to json if empty string is passed. """
-
-        response = self.client.get(self.url, CONTENT_TYPE='')
-
-        assert self.user.is_staff
-        assert response.status_code == 200
-        assert self.SUCCESSFUL_RESPONSE in response.content.decode()

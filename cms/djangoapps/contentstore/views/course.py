@@ -372,12 +372,12 @@ def course_search_index_handler(request, course_key_string):
         html: return status of indexing task
         json: return status of indexing task
     """
-    # Only global staff (PMs) are able to index courses
     course_key = CourseKey.from_string(course_key_string)
     is_authz_enabled = core_toggles.AUTHZ_COURSE_AUTHORING_FLAG.is_enabled(course_key)
     if not is_authz_enabled:
-        # Fallback to legacy permission check if authz flag
-        # is not enabled for this course
+        # Under AuthZ, users with course authoring permissions can index courses,
+        # so no staff check is necessary.
+        # Under the legacy system, only global staff (PMs) can index courses.
         if not GlobalStaff().has_user(request.user):
             raise PermissionDenied()
     content_type = request.META.get('CONTENT_TYPE', None)
