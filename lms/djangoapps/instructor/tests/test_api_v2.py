@@ -26,6 +26,8 @@ from common.djangoapps.student.tests.factories import (
     StaffFactory,
     UserFactory,
 )
+from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor.views.serializers_v2 import CourseInformationSerializerV2
 from lms.djangoapps.instructor_task.tests.factories import InstructorTaskFactory
@@ -1912,25 +1914,31 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    @patch('lms.djangoapps.instructor.views.api_v2.GeneratedCertificate.objects.filter')
-    def test_search_filter(self, mock_filter):
+    def test_search_filter(self):
         """
         Test filtering certificates by search term.
         """
-        # Mock queryset methods - must be fully iterable
-        mock_queryset = Mock()
-        mock_queryset.select_related.return_value = mock_queryset
-        mock_queryset.filter.return_value = mock_queryset
-        mock_queryset.order_by.return_value = mock_queryset
-        mock_queryset.count.return_value = 0
-        mock_queryset.__iter__ = Mock(return_value=iter([]))
-        mock_filter.return_value = mock_queryset
+        # Create a certificate for student1
+        GeneratedCertificateFactory.create(
+            user=self.student1,
+            course_id=self.course_key,
+            status=CertificateStatuses.downloadable
+        )
+        # Create a certificate for student2
+        GeneratedCertificateFactory.create(
+            user=self.student2,
+            course_id=self.course_key,
+            status=CertificateStatuses.downloadable
+        )
 
         self.client.force_authenticate(user=self.instructor)
         params = {'search': 'student1'}
         response = self.client.get(self._get_url(), params)
 
         assert response.status_code == status.HTTP_200_OK
+        # Verify only student1's certificate is returned
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['username'] == 'student1'
 
     @ddt.data(
         'received',
