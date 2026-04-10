@@ -1882,9 +1882,9 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         self.client.force_authenticate(user=self.staff)
         response = self.client.get(self._get_url())
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('results', response.data)
-        self.assertIn('count', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'results' in response.data
+        assert 'count' in response.data
 
     def test_get_issued_certificates_unauthorized(self):
         """
@@ -1893,14 +1893,14 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         self.client.force_authenticate(user=self.student1)
         response = self.client.get(self._get_url())
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_get_issued_certificates_unauthenticated(self):
         """
         Test that unauthenticated users cannot access the endpoint.
         """
         response = self.client.get(self._get_url())
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_get_issued_certificates_nonexistent_course(self):
         """
@@ -1910,7 +1910,7 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         nonexistent_course_id = 'course-v1:edX+NonExistent+2024'
         response = self.client.get(self._get_url(course_id=nonexistent_course_id))
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @patch('lms.djangoapps.instructor.views.api_v2.GeneratedCertificate.objects.filter')
     def test_search_filter(self, mock_filter):
@@ -1930,7 +1930,7 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         params = {'search': 'student1'}
         response = self.client.get(self._get_url(), params)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
     @ddt.data(
         'received',
@@ -1949,8 +1949,8 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         params = {'filter': filter_type}
         response = self.client.get(self._get_url(), params)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('results', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'results' in response.data
 
     def test_pagination(self):
         """
@@ -1960,11 +1960,11 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         params = {'page': '1', 'page_size': '10'}
         response = self.client.get(self._get_url(), params)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('count', response.data)
-        self.assertIn('next', response.data)
-        self.assertIn('previous', response.data)
-        self.assertIn('results', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'count' in response.data
+        assert 'next' in response.data
+        assert 'previous' in response.data
+        assert 'results' in response.data
 
 
 @ddt.ddt
@@ -2004,9 +2004,9 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         self.client.force_authenticate(user=self.staff)
         response = self.client.get(self._get_url())
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('results', response.data)
-        self.assertIn('count', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'results' in response.data
+        assert 'count' in response.data
 
     def test_get_generation_history_unauthorized(self):
         """
@@ -2015,14 +2015,14 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         self.client.force_authenticate(user=self.student)
         response = self.client.get(self._get_url())
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_get_generation_history_unauthenticated(self):
         """
         Test that unauthenticated users cannot access the endpoint.
         """
         response = self.client.get(self._get_url())
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_get_generation_history_nonexistent_course(self):
         """
@@ -2032,7 +2032,7 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         nonexistent_course_id = 'course-v1:edX+NonExistent+2024'
         response = self.client.get(self._get_url(course_id=nonexistent_course_id))
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_pagination(self):
         """
@@ -2042,11 +2042,11 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         params = {'page': '1', 'page_size': '10'}
         response = self.client.get(self._get_url(), params)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('count', response.data)
-        self.assertIn('next', response.data)
-        self.assertIn('previous', response.data)
-        self.assertIn('results', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'count' in response.data
+        assert 'next' in response.data
+        assert 'previous' in response.data
+        assert 'results' in response.data
 
     @patch('lms.djangoapps.instructor.views.api_v2.CertificateGenerationHistory.objects.filter')
     def test_history_entry_structure(self, mock_filter):
@@ -2069,20 +2069,20 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         self.client.force_authenticate(user=self.instructor)
         response = self.client.get(self._get_url())
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         results = response.data['results']
 
         if results:
             entry = results[0]
             # Verify all required fields are present (camelCase from serializer)
-            self.assertIn('taskName', entry)
-            self.assertIn('date', entry)
-            self.assertIn('details', entry)
+            assert 'taskName' in entry
+            assert 'date' in entry
+            assert 'details' in entry
 
             # Verify data types
-            self.assertIsInstance(entry['taskName'], str)
-            self.assertIsInstance(entry['date'], str)
-            self.assertIsInstance(entry['details'], str)
+            assert isinstance(entry['taskName'], str)
+            assert isinstance(entry['date'], str)
+            assert isinstance(entry['details'], str)
 
 
 class CourseEnrollmentsViewTest(SharedModuleStoreTestCase):
