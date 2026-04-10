@@ -379,7 +379,6 @@ class TestCourseListing(ModuleStoreTestCase):
             )
 
 
-@ddt.ddt
 class TestCourseHandlerAuthz(
     CourseAuthoringAuthzTestMixin,
     ModuleStoreTestCase,
