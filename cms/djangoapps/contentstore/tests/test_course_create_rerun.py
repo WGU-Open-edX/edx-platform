@@ -484,13 +484,7 @@ class TestCourseHandlerAuthz(
         Even authorized users cannot create course if feature flag is off.
         """
 
-        self.add_user_to_role_in_course(
-            self.authorized_user,
-            COURSE_EDITOR.external_key,
-            self.org_key,
-        )
-
-        response = self.authorized_client.ajax_post(self.url, {
+        response = self.authorized_staff_client.ajax_post(self.url, {
             "org": self.org,
             "number": "CS101",
             "display_name": "Authz Course",
