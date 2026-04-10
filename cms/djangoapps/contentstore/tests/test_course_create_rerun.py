@@ -439,7 +439,7 @@ class TestCourseHandlerAuthz(
     @override_settings(FEATURES={"DISABLE_COURSE_CREATION": False})
     def test_create_course_unauthorized_with_role(self):
         """
-        User without role cannot create course.
+        User with role but without required permission cannot create course.
         """
 
         self.add_user_to_role_in_course(
