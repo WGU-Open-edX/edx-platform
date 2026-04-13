@@ -27,6 +27,7 @@ from common.djangoapps.student.tests.factories import (
     UserFactory,
 )
 from lms.djangoapps.certificates.data import CertificateStatuses
+from lms.djangoapps.certificates.models import CertificateGenerationHistory
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor.views.serializers_v2 import CourseInformationSerializerV2
@@ -2056,41 +2057,39 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         assert 'previous' in response.data
         assert 'results' in response.data
 
-    @patch('lms.djangoapps.instructor.views.api_v2.CertificateGenerationHistory.objects.filter')
-    def test_history_entry_structure(self, mock_filter):
+    def test_history_entry_structure(self):
         """
         Test that history entries have the correct structure.
         """
-        # Mock history entry
-        mock_entry = Mock()
-        mock_entry.is_regeneration = True
-        mock_entry.created = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC)
-        mock_entry.get_certificate_generation_candidates.return_value = "audit not passing states"
-
-        # Create a mock queryset that behaves like a list for pagination
-        mock_result_list = [mock_entry]
-        mock_queryset = Mock()
-        mock_queryset.select_related.return_value = mock_queryset
-        mock_queryset.order_by.return_value = mock_result_list
-        mock_filter.return_value = mock_queryset
+        # Create a real certificate generation history entry
+        task = InstructorTaskFactory.create(
+            course_id=self.course_key,
+            task_input='{}',
+            requester=self.instructor,
+        )
+        CertificateGenerationHistory.objects.create(
+            course_id=self.course_key,
+            generated_by=self.instructor,
+            instructor_task=task,
+            is_regeneration=True,
+        )
 
         self.client.force_authenticate(user=self.instructor)
         response = self.client.get(self._get_url())
 
         assert response.status_code == status.HTTP_200_OK
-        results = response.data['results']
+        assert len(response.data['results']) == 1
 
-        if results:
-            entry = results[0]
-            # Verify all required fields are present (camelCase from serializer)
-            assert 'taskName' in entry
-            assert 'date' in entry
-            assert 'details' in entry
+        entry = response.data['results'][0]
+        # Verify all required fields are present (snake_case from serializer)
+        assert entry['task_name'] == 'Regenerated'
+        assert 'date' in entry
+        assert entry['details'] == 'All learners'
 
-            # Verify data types
-            assert isinstance(entry['taskName'], str)
-            assert isinstance(entry['date'], str)
-            assert isinstance(entry['details'], str)
+        # Verify data types
+        assert isinstance(entry['task_name'], str)
+        assert isinstance(entry['date'], str)
+        assert isinstance(entry['details'], str)
 
 
 class CourseEnrollmentsViewTest(SharedModuleStoreTestCase):
