@@ -374,12 +374,11 @@ def course_search_index_handler(request, course_key_string):
     """
     course_key = CourseKey.from_string(course_key_string)
     is_authz_enabled = core_toggles.AUTHZ_COURSE_AUTHORING_FLAG.is_enabled(course_key)
-    if not is_authz_enabled:
+    if not is_authz_enabled and not GlobalStaff().has_user(request.user):
         # Under AuthZ, users with course authoring permissions can index courses,
         # so no staff check is necessary.
         # Under the legacy system, only global staff (PMs) can index courses.
-        if not GlobalStaff().has_user(request.user):
-            raise PermissionDenied()
+        raise PermissionDenied()
     content_type = request.META.get('CONTENT_TYPE', None)
     if content_type is None:
         content_type = "application/json; charset=utf-8"
