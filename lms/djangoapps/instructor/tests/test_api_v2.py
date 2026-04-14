@@ -2064,6 +2064,8 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         # Create a real certificate generation history entry
         task = InstructorTaskFactory.create(
             course_id=self.course_key,
+            task_type='generate_certificates',
+            task_key=str(self.course_key),
             task_input='{}',
             requester=self.instructor,
         )
