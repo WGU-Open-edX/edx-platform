@@ -2066,6 +2066,7 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
             course_id=self.course_key,
             task_type='generate_certificates',
             task_key=str(self.course_key),
+            task_id=str(uuid4()),
             task_input='{}',
             requester=self.instructor,
         )
