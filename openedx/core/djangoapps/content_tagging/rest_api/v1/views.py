@@ -12,11 +12,11 @@ from openedx_events.content_authoring.data import ContentObjectChangedData, Cont
 from openedx_events.content_authoring.signals import CONTENT_OBJECT_ASSOCIATIONS_CHANGED, CONTENT_OBJECT_TAGS_CHANGED
 from openedx_tagging import rules as oel_tagging_rules
 from openedx_tagging.api import TagDoesNotExist, get_object_tags, tag_object
-from openedx_tagging.rest_api.v1.serializers import ObjectTagUpdateBodySerializer
+from openedx_tagging.rest_api.v1.serializers import ObjectTagListQueryParamsSerializer, ObjectTagUpdateBodySerializer
 from openedx_tagging.rest_api.v1.views import ObjectTagView, TaxonomyView
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -206,7 +206,17 @@ class ObjectTagOrgView(ObjectTagView):
         object_id = self.kwargs["object_id"]
         _, authz_active = self._is_authz_active(object_id)
         if authz_active:
-            return get_object_tags(object_id)
+            query_params = ObjectTagListQueryParamsSerializer(
+                data=self.request.query_params.dict()
+            )
+            query_params.is_valid(raise_exception=True)
+            taxonomy = query_params.validated_data.get("taxonomy", None)
+            taxonomy_id = taxonomy.cast().id if taxonomy else None
+
+            if object_id.endswith("*") or "," in object_id:
+                raise ValidationError("Retrieving tags from multiple objects is not yet supported.")
+
+            return get_object_tags(object_id, taxonomy_id)
         return super().get_queryset()
 
     def retrieve(self, request, *args, **kwargs):
@@ -240,7 +250,7 @@ class ObjectTagOrgView(ObjectTagView):
         parent's legacy per-taxonomy permission checks. When authz is not enabled,
         delegates to the parent's update which uses legacy django-rules checks.
         """
-        object_id = kwargs.get('object_id', '')
+        object_id = kwargs.pop('object_id', '')
         course_key, authz_active = self._is_authz_active(object_id)
 
         if authz_active:
@@ -250,7 +260,7 @@ class ObjectTagOrgView(ObjectTagView):
                 raise PermissionDenied(
                     "You do not have permission to manage tags for this course."
                 )
-            response = self._update_tags(request, object_id)
+            response = self._update_tags(request, object_id, **kwargs)
         else:
             response = super().update(request, *args, **kwargs)
 
@@ -273,12 +283,16 @@ class ObjectTagOrgView(ObjectTagView):
 
         return response
 
-    def _update_tags(self, request, object_id):
+    def _update_tags(self, request, object_id, **kwargs):
         """
         Apply tag updates without legacy permission checks.
         Replicates the parent's ObjectTagView.update() logic for tag saving
         but skips the per-taxonomy oel_tagging.can_tag_object check.
         """
+        partial = kwargs.pop('partial', False)
+        if partial:
+            raise MethodNotAllowed("PATCH", detail="PATCH not allowed")
+
         body = ObjectTagUpdateBodySerializer(data=request.data)
         body.is_valid(raise_exception=True)
 
