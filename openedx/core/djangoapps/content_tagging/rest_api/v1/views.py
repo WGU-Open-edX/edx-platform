@@ -250,7 +250,7 @@ class ObjectTagOrgView(ObjectTagView):
         parent's legacy per-taxonomy permission checks. When authz is not enabled,
         delegates to the parent's update which uses legacy django-rules checks.
         """
-        object_id = kwargs.pop('object_id', '')
+        object_id = kwargs.get('object_id', '')
         course_key, authz_active = self._is_authz_active(object_id)
 
         if authz_active:
@@ -260,6 +260,7 @@ class ObjectTagOrgView(ObjectTagView):
                 raise PermissionDenied(
                     "You do not have permission to manage tags for this course."
                 )
+            kwargs.pop('object_id', None)
             response = self._update_tags(request, object_id, **kwargs)
         else:
             response = super().update(request, *args, **kwargs)
