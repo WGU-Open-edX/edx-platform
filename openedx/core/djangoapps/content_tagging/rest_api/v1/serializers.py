@@ -4,15 +4,22 @@ API Serializers for content tagging org
 
 from __future__ import annotations
 
+from opaque_keys.edx.keys import CourseKey
+from openedx_authz import api as authz_api
+from openedx_authz.constants.permissions import COURSES_MANAGE_TAGS
 from openedx_tagging.rest_api.v1.serializers import (
     ObjectTagMinimalSerializer,
+    ObjectTagsByTaxonomySerializer,
     TaxonomyListQueryParamsSerializer,
     TaxonomySerializer,
 )
 from organizations.models import Organization
 from rest_framework import fields, serializers
 
+from openedx.core import toggles as core_toggles
+
 from ...models import TaxonomyOrg
+from ...utils import get_context_key_from_key_string
 
 
 class TaxonomyOrgListQueryParamsSerializer(TaxonomyListQueryParamsSerializer):
@@ -95,6 +102,25 @@ class TaxonomyOrgSerializer(TaxonomySerializer):
         read_only_fields = ["orgs", "all_orgs"]
 
 
+def _check_authz_manage_tags(context, object_id):
+    """
+    Check courses.manage_tags via openedx-authz if the flag is active for this object's course.
+    Returns (can_manage: bool, authz_active: True) if authz handled it,
+    (None, False) if legacy should be used.
+    """
+    try:
+        context_key = get_context_key_from_key_string(object_id)
+        if isinstance(context_key, CourseKey) and core_toggles.enable_authz_course_authoring(context_key):
+            request = context.get("request")
+            if request:
+                return authz_api.is_user_allowed(
+                    request.user.username, COURSES_MANAGE_TAGS.identifier, str(context_key)
+                ), True
+    except ValueError:
+        pass
+    return None, False
+
+
 class ObjectTagCopiedMinimalSerializer(ObjectTagMinimalSerializer):
     """
     Serializer for Object Tags.
@@ -112,10 +138,29 @@ class ObjectTagCopiedMinimalSerializer(ObjectTagMinimalSerializer):
         """
         Verify if the user can delete the object tag.
 
-        Override to return `False` if the object tag is copied.
+        Override to return `False` if the object tag is copied,
+        and to use authz when active.
         """
         if instance.is_copied:
-            # The user can't delete copied tags.
             return False
 
+        can_manage, authz_active = _check_authz_manage_tags(self.context, instance.object_id)
+        if authz_active:
+            return can_manage
+
         return super().get_can_delete_objecttag(instance)
+
+
+class ObjectTagsByTaxonomyOrgSerializer(ObjectTagsByTaxonomySerializer):
+    """
+    Extends ObjectTagsByTaxonomySerializer to use authz for can_tag_object when active.
+    """
+
+    def get_can_tag_object(self, obj_tag):
+        """
+        When authz is active, return whether the user has courses.manage_tags.
+        """
+        can_manage, authz_active = _check_authz_manage_tags(self.context, obj_tag.object_id)
+        if authz_active:
+            return can_manage
+        return super().get_can_tag_object(obj_tag)

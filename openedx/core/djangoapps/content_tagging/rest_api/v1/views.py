@@ -37,6 +37,7 @@ from ...utils import get_context_key_from_key_string
 from .filters import ObjectTagTaxonomyOrgFilterBackend, UserOrgFilterBackend
 from .serializers import (
     ObjectTagCopiedMinimalSerializer,
+    ObjectTagsByTaxonomyOrgSerializer,
     TaxonomyOrgListQueryParamsSerializer,
     TaxonomyOrgSerializer,
     TaxonomyUpdateOrgBodySerializer,
@@ -158,6 +159,7 @@ class ObjectTagOrgView(ObjectTagView):
     Refer to ObjectTagView docstring for usage details.
     """
     minimal_serializer_class = ObjectTagCopiedMinimalSerializer
+    taxonomy_serializer_class = ObjectTagsByTaxonomyOrgSerializer
     filter_backends = [ObjectTagTaxonomyOrgFilterBackend]
 
     def _get_course_key(self, object_id):
@@ -219,28 +221,6 @@ class ObjectTagOrgView(ObjectTagView):
                 )
             return
         super().check_can_tag_object_permission(object_id, taxonomy)
-
-    def get_can_tag_object_value(self, user, obj_tag):
-        """
-        When authz is active, return whether the user has courses.manage_tags.
-        """
-        course_key, authz_active = self._is_authz_active(obj_tag.object_id)
-        if authz_active:
-            return authz_api.is_user_allowed(
-                user.username, COURSES_MANAGE_TAGS.identifier, str(course_key)
-            )
-        return super().get_can_tag_object_value(user, obj_tag)
-
-    def get_can_delete_objecttag_value(self, user, object_id):
-        """
-        When authz is active, return whether the user has courses.manage_tags.
-        """
-        course_key, authz_active = self._is_authz_active(object_id)
-        if authz_active:
-            return authz_api.is_user_allowed(
-                user.username, COURSES_MANAGE_TAGS.identifier, str(course_key)
-            )
-        return super().get_can_delete_objecttag_value(user, object_id)
 
     def update(self, request, *args, **kwargs) -> Response:
         """
