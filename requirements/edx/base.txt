@@ -4,6 +4,11 @@
 #
 #    make upgrade
 #
+-e git+https://github.com/WGU-Open-edX/openedx-core.git@tpayne/object-tag-view-authz-refactor#egg=openedx-core
+    # via
+    #   -c requirements/constraints.txt
+    #   -r requirements/edx/github.in
+    #   -r requirements/edx/kernel.in
 acid-xblock==0.4.1
     # via -r requirements/edx/kernel.in
 aiohappyeyeballs==2.6.1
@@ -833,10 +838,6 @@ openedx-calc==5.0.0
     # via
     #   -r requirements/edx/kernel.in
     #   xblocks-contrib
-openedx-core==0.39.0
-    # via
-    #   -c requirements/constraints.txt
-    #   -r requirements/edx/kernel.in
 openedx-django-pyfs==4.0.0
     # via xblock
 openedx-django-require==3.0.0

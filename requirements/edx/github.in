@@ -80,7 +80,8 @@
 # Release candidates being tested.
 ##############################################################################
 
-# ... add dependencies here
+# https://github.com/openedx/openedx-platform/pull/38292
+-e git+https://github.com/WGU-Open-edX/openedx-core.git@tpayne/object-tag-view-authz-refactor#egg=openedx-core
 
 ##############################################################################
 # Critical fixes for packages that are not yet available in a PyPI release.
