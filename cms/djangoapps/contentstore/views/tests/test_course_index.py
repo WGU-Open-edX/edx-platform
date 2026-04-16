@@ -12,6 +12,7 @@ import pytz
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from search.api import perform_search
+from openedx_authz.constants.roles import COURSE_STAFF
 
 from cms.djangoapps.contentstore.courseware_index import CoursewareSearchIndexer, SearchIndexingError
 from cms.djangoapps.contentstore.tests.utils import AjaxEnabledTestClient, CourseTestCase
@@ -611,3 +612,18 @@ class TestCourseReIndexAuthz(CourseAuthoringAuthzTestMixin, CourseTestCase):
 
         assert not self.non_staff_user.is_staff
         assert response.status_code == 403
+
+    def test_non_staff_user_can_reindex(self):
+        """ Verify that non-staff user with course authoring permissions can reindex the course. """
+
+        # Grant access helper
+        self.add_user_to_role_in_course(
+            self.non_staff_user,
+            COURSE_STAFF.external_key,
+            self.course.id
+        )
+        response = self.non_staff_client.get(self.url, HTTP_ACCEPT='application/json')
+
+        assert not self.non_staff_user.is_staff
+        assert response.status_code == 200
+        assert self.SUCCESSFUL_RESPONSE in response.content.decode()

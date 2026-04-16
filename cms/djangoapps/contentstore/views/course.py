@@ -31,7 +31,7 @@ from opaque_keys.edx.locator import BlockUsageLocator
 from openedx_authz.api import get_scopes_for_user_and_permission
 from openedx_authz.api.data import CourseOverviewData, OrgCourseOverviewGlobData, ScopeData
 from openedx_authz.constants.permissions import (
-    COURSES_CREATE_COURSE,
+    COURSES_PUBLISH_COURSE_CONTENT,
     COURSES_MANAGE_COURSE_UPDATES,
     COURSES_MANAGE_GROUP_CONFIGURATIONS,
     COURSES_MANAGE_PAGES_AND_RESOURCES,
@@ -193,7 +193,7 @@ def reindex_course_and_check_access(course_key, user):
     """
     if not user_has_course_permission(
         user=user,
-        authz_permission=COURSES_CREATE_COURSE.identifier,
+        authz_permission=COURSES_PUBLISH_COURSE_CONTENT.identifier,
         course_key=course_key,
         legacy_permission=LegacyAuthoringPermission.WRITE
     ):
@@ -375,9 +375,9 @@ def course_search_index_handler(request, course_key_string):
     course_key = CourseKey.from_string(course_key_string)
     is_authz_enabled = core_toggles.AUTHZ_COURSE_AUTHORING_FLAG.is_enabled(course_key)
     if not is_authz_enabled and not GlobalStaff().has_user(request.user):
-        # Under AuthZ, users with course authoring permissions can index courses,
-        # so no staff check is necessary.
-        # Under the legacy system, only global staff (PMs) can index courses.
+        # When AuthZ is disabled, restrict to global staff (legacy behavior).
+        # When AuthZ is enabled, access control is enforced by the AuthZ layer,
+        # which includes staff/superuser checks and course-level permissions.
         raise PermissionDenied()
     content_type = request.META.get('CONTENT_TYPE', None)
     if content_type is None:
