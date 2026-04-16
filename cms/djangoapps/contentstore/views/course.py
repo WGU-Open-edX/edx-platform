@@ -31,10 +31,10 @@ from opaque_keys.edx.locator import BlockUsageLocator
 from openedx_authz.api import get_scopes_for_user_and_permission
 from openedx_authz.api.data import CourseOverviewData, OrgCourseOverviewGlobData, ScopeData
 from openedx_authz.constants.permissions import (
-    COURSES_PUBLISH_COURSE_CONTENT,
     COURSES_MANAGE_COURSE_UPDATES,
     COURSES_MANAGE_GROUP_CONFIGURATIONS,
     COURSES_MANAGE_PAGES_AND_RESOURCES,
+    COURSES_PUBLISH_COURSE_CONTENT,
     COURSES_VIEW_COURSE,
     COURSES_VIEW_COURSE_UPDATES,
     COURSES_VIEW_PAGES_AND_RESOURCES,
