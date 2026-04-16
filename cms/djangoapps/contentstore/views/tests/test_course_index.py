@@ -623,7 +623,6 @@ class TestCourseReIndexAuthz(CourseAuthoringAuthzTestMixin, CourseTestCase):
             self.course.id
         )
         response = self.non_staff_client.get(self.url, HTTP_ACCEPT='application/json')
-
         assert not self.non_staff_user.is_staff
         assert response.status_code == 200
         assert self.SUCCESSFUL_RESPONSE in response.content.decode()
