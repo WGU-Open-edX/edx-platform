@@ -2102,7 +2102,7 @@ class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
         # Verify all required fields are present (snake_case from serializer)
         assert entry['task_name'] == 'Regenerated'
         assert 'date' in entry
-        assert entry['details'] == 'All learners'
+        assert entry['details'] == 'All Learners'
 
         # Verify data types
         assert isinstance(entry['task_name'], str)
