@@ -1758,7 +1758,7 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
                 )
 
             # Remove exception
-            deleted_count, _ = CertificateAllowlist.objects.filter(
+            deleted_count, __ = CertificateAllowlist.objects.filter(
                 course_id=course_key,
                 user=user
             ).delete()
