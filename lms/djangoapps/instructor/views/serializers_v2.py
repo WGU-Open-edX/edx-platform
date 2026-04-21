@@ -82,6 +82,9 @@ class CourseInformationSerializerV2(serializers.Serializer):
     analytics_dashboard_message = serializers.SerializerMethodField(
         help_text="Message about analytics dashboard availability"
     )
+    certificates_enabled = serializers.SerializerMethodField(
+        help_text="Whether certificate management features are enabled for this course"
+    )
 
     @staticmethod
     def _build_tab_url(setting_name, *path_parts, strip_url=True):
@@ -467,6 +470,14 @@ class CourseInformationSerializerV2(serializers.Serializer):
         """Get analytics dashboard availability message."""
         return get_analytics_dashboard_message(data['course'].id)
 
+    def get_certificates_enabled(self, data):
+        """Check if certificate management features are enabled."""
+        from lms.djangoapps.certificates import api as certs_api
+
+        course_key = data['course'].id
+        # Check if certificate generation is enabled (not available for CCX courses)
+        return certs_api.is_certificate_generation_enabled() and not hasattr(course_key, 'ccx')
+
 
 class InstructorTaskSerializer(serializers.Serializer):
     """Serializer for instructor task details."""
@@ -624,6 +635,10 @@ class IssuedCertificateSerializer(serializers.Serializer):
         allow_null=True,
         help_text="Date when certificate was invalidated in ISO 8601 format"
     )
+    invalidation_note = serializers.SerializerMethodField(
+        allow_null=True,
+        help_text="Notes about the invalidation"
+    )
 
     def get_enrollment_track(self, obj):
         """Get enrollment track from context."""
@@ -664,6 +679,12 @@ class IssuedCertificateSerializer(serializers.Serializer):
         invalidation_dict = self.context.get('invalidation_dict', {})
         invalidation_info = invalidation_dict.get(obj.user_id)
         return invalidation_info['created'] if invalidation_info else None
+
+    def get_invalidation_note(self, obj):
+        """Get invalidation notes from invalidation data in context."""
+        invalidation_dict = self.context.get('invalidation_dict', {})
+        invalidation_info = invalidation_dict.get(obj.user_id)
+        return invalidation_info['notes'] if invalidation_info else None
 
 
 class CertificateGenerationHistorySerializer(serializers.Serializer):

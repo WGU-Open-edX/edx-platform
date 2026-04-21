@@ -1287,7 +1287,8 @@ class IssuedCertificatesView(ListAPIView):
         context['invalidation_dict'] = {
             inv.generated_certificate.user_id: {
                 'invalidated_by': inv.invalidated_by.email,
-                'created': inv.created.isoformat()
+                'created': inv.created.isoformat(),
+                'notes': inv.notes or ''
             }
             for inv in invalidations
         }
@@ -1576,6 +1577,372 @@ class CertificateConfigView(DeveloperErrorViewMixin, APIView):
         enabled = certs_api.is_certificate_generation_enabled() and not hasattr(course_key, 'ccx')
 
         return Response({'enabled': enabled}, status=status.HTTP_200_OK)
+
+
+class ToggleCertificateGenerationView(DeveloperErrorViewMixin, APIView):
+    """
+    View to toggle certificate generation for a course.
+
+    **Example Requests**
+
+        POST /api/instructor/v2/courses/{course_id}/certificates/toggle_generation
+
+    **Request Body**
+
+        {
+            "enabled": true
+        }
+
+    **Response Values**
+
+        {
+            "enabled": true
+        }
+
+    **Returns**
+
+        * 200: OK - Certificate generation toggled successfully
+        * 400: Bad Request - Invalid request body
+        * 401: Unauthorized - User is not authenticated
+        * 403: Forbidden - User lacks instructor permissions
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.ENABLE_CERTIFICATE_GENERATION
+
+    def post(self, request, course_id):
+        """Toggle certificate generation for a course."""
+        course_key = CourseKey.from_string(course_id)
+        enabled = request.data.get('enabled', False)
+
+        try:
+            certs_api.set_cert_generation_enabled(course_key, enabled)
+            return Response({'enabled': enabled}, status=status.HTTP_200_OK)
+        except Exception as exc:
+            log.error("Error toggling certificate generation: %s", exc)
+            return Response(
+                {'message': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
+    """
+    View to grant or remove certificate exceptions (allowlist).
+
+    **Example Requests**
+
+        POST /api/instructor/v2/courses/{course_id}/certificates/exceptions
+        DELETE /api/instructor/v2/courses/{course_id}/certificates/exceptions
+
+    **POST Request Body**
+
+        {
+            "learners": ["username1", "username2"],
+            "notes": "Reason for granting exceptions"
+        }
+
+    **DELETE Request Body**
+
+        {
+            "username": "username1"
+        }
+
+    **Returns**
+
+        * 200: OK - Exception granted/removed successfully
+        * 400: Bad Request - Invalid request or user not found
+        * 401: Unauthorized - User is not authenticated
+        * 403: Forbidden - User lacks instructor permissions
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.CERTIFICATE_EXCEPTION_VIEW
+
+    def post(self, request, course_id):
+        """Grant certificate exceptions (add to allowlist)."""
+        course_key = CourseKey.from_string(course_id)
+        learners_input = request.data.get('learners', '')
+        notes = request.data.get('notes', '')
+
+        # Handle both string (comma-separated) and list inputs
+        if isinstance(learners_input, str):
+            learners = [l.strip() for l in learners_input.split(',') if l.strip()]
+        else:
+            learners = learners_input
+
+        if not learners:
+            return Response(
+                {'message': _('No learners provided')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        results = {
+            'success': [],
+            'errors': []
+        }
+
+        for learner in learners:
+            try:
+                user = get_user_by_username_or_email(learner)
+                if not user:
+                    results['errors'].append({
+                        'learner': learner,
+                        'message': _('User not found')
+                    })
+                    continue
+
+                # Check if user is enrolled
+                if not is_user_enrolled_in_course(user, course_key):
+                    results['errors'].append({
+                        'learner': learner,
+                        'message': _('User is not enrolled in this course')
+                    })
+                    continue
+
+                # Check if user already has an exception
+                if CertificateAllowlist.objects.filter(
+                    course_id=course_key,
+                    user=user
+                ).exists():
+                    results['errors'].append({
+                        'learner': learner,
+                        'message': _('User already has a certificate exception')
+                    })
+                    continue
+
+                # Check if user has an active invalidation
+                if CertificateInvalidation.objects.filter(
+                    generated_certificate__course_id=course_key,
+                    generated_certificate__user=user,
+                    active=True
+                ).exists():
+                    results['errors'].append({
+                        'learner': learner,
+                        'message': _('User has an active certificate invalidation')
+                    })
+                    continue
+
+                # Grant exception
+                CertificateAllowlist.objects.create(
+                    user=user,
+                    course_id=course_key,
+                    allowlist=True,
+                    notes=notes
+                )
+                results['success'].append(learner)
+
+            except Exception as exc:
+                results['errors'].append({
+                    'learner': learner,
+                    'message': str(exc)
+                })
+
+        return Response(results, status=status.HTTP_200_OK)
+
+    def delete(self, request, course_id):
+        """Remove certificate exception (remove from allowlist)."""
+        course_key = CourseKey.from_string(course_id)
+        username = request.data.get('username')
+
+        if not username:
+            return Response(
+                {'message': _('No username provided')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = get_user_by_username_or_email(username)
+            if not user:
+                return Response(
+                    {'message': _('User not found')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Remove exception
+            deleted_count, _ = CertificateAllowlist.objects.filter(
+                course_id=course_key,
+                user=user
+            ).delete()
+
+            if deleted_count == 0:
+                return Response(
+                    {'message': _('No certificate exception found for this user')},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            return Response(
+                {'message': _('Certificate exception removed successfully')},
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as exc:
+            log.error("Error removing certificate exception: %s", exc)
+            return Response(
+                {'message': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
+    """
+    View to invalidate or re-validate certificates.
+
+    **Example Requests**
+
+        POST /api/instructor/v2/courses/{course_id}/certificates/invalidations
+        DELETE /api/instructor/v2/courses/{course_id}/certificates/invalidations
+
+    **POST Request Body**
+
+        {
+            "learners": ["username1", "username2"],
+            "notes": "Reason for invalidation"
+        }
+
+    **DELETE Request Body**
+
+        {
+            "username": "username1"
+        }
+
+    **Returns**
+
+        * 200: OK - Certificate invalidated/re-validated successfully
+        * 400: Bad Request - Invalid request or certificate not found
+        * 401: Unauthorized - User is not authenticated
+        * 403: Forbidden - User lacks instructor permissions
+    """
+    permission_classes = (IsAuthenticated, permissions.InstructorPermission)
+    permission_name = permissions.CERTIFICATE_INVALIDATION_VIEW
+
+    def post(self, request, course_id):
+        """Invalidate certificates."""
+        course_key = CourseKey.from_string(course_id)
+        learners_input = request.data.get('learners', '')
+        notes = request.data.get('notes', '')
+
+        # Handle both string (comma-separated) and list inputs
+        if isinstance(learners_input, str):
+            learners = [l.strip() for l in learners_input.split(',') if l.strip()]
+        else:
+            learners = learners_input
+
+        if not learners:
+            return Response(
+                {'message': _('No learners provided')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        results = {
+            'success': [],
+            'errors': []
+        }
+
+        for learner in learners:
+            try:
+                user = get_user_by_username_or_email(learner)
+                if not user:
+                    results['errors'].append({
+                        'learner': learner,
+                        'message': _('User not found')
+                    })
+                    continue
+
+                # Get the certificate
+                try:
+                    certificate = GeneratedCertificate.objects.get(
+                        course_id=course_key,
+                        user=user
+                    )
+                except GeneratedCertificate.DoesNotExist:
+                    results['errors'].append({
+                        'learner': learner,
+                        'message': _('Certificate not found for this user')
+                    })
+                    continue
+
+                # Check if already invalidated
+                if CertificateInvalidation.objects.filter(
+                    generated_certificate=certificate,
+                    active=True
+                ).exists():
+                    results['errors'].append({
+                        'learner': learner,
+                        'message': _('Certificate is already invalidated')
+                    })
+                    continue
+
+                # Invalidate certificate
+                CertificateInvalidation.objects.create(
+                    generated_certificate=certificate,
+                    invalidated_by=request.user,
+                    notes=notes,
+                    active=True
+                )
+                certificate.invalidate()
+                results['success'].append(learner)
+
+            except Exception as exc:
+                results['errors'].append({
+                    'learner': learner,
+                    'message': str(exc)
+                })
+
+        return Response(results, status=status.HTTP_200_OK)
+
+    def delete(self, request, course_id):
+        """Re-validate certificate (remove invalidation)."""
+        course_key = CourseKey.from_string(course_id)
+        username = request.data.get('username')
+
+        if not username:
+            return Response(
+                {'message': _('No username provided')},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = get_user_by_username_or_email(username)
+            if not user:
+                return Response(
+                    {'message': _('User not found')},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Get the certificate
+            try:
+                certificate = GeneratedCertificate.objects.get(
+                    course_id=course_key,
+                    user=user
+                )
+            except GeneratedCertificate.DoesNotExist:
+                return Response(
+                    {'message': _('Certificate not found for this user')},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Remove invalidation
+            updated_count = CertificateInvalidation.objects.filter(
+                generated_certificate=certificate,
+                active=True
+            ).update(active=False)
+
+            if updated_count == 0:
+                return Response(
+                    {'message': _('No active invalidation found for this certificate')},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            return Response(
+                {'message': _('Certificate invalidation removed successfully')},
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as exc:
+            log.error("Error removing certificate invalidation: %s", exc)
+            return Response(
+                {'message': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class CourseEnrollmentsView(DeveloperErrorViewMixin, ListAPIView):
