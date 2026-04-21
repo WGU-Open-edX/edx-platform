@@ -63,9 +63,9 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         })
         response = self.client.get(url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)  # noqa: PT009
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertTrue(data['is_enrolled'])  # noqa: PT009
+        assert data['is_enrolled']
 
     def test_get_learner_by_email(self):
         """Test retrieving learner info by email"""
