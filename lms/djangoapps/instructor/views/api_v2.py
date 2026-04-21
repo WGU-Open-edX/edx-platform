@@ -1754,6 +1754,7 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
             'email': student.email,
             'full_name': student.profile.name,
             'progress_url': progress_url,
+            'is_enrolled': CourseEnrollment.is_enrolled(student, course_key),
         }
 
         serializer = LearnerSerializer(learner_data)

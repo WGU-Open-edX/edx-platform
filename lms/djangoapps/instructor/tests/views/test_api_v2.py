@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 from common.djangoapps.student.tests.factories import InstructorFactory, UserFactory
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor_task.models import InstructorTask
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
+from xmodule.modulestore.tests.django_utils import CourseEnrollment, ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
 
 
@@ -52,6 +52,20 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         self.assertEqual(data['email'], 'john@example.com')  # noqa: PT009
         self.assertEqual(data['full_name'], 'John Harvard')  # noqa: PT009
         self.assertEqual(data['progress_url'], expected_progress_url)  # noqa: PT009
+        self.assertFalse(data['is_enrolled'])  # noqa: PT009
+
+    def test_get_learner_by_username_enrolled(self):
+        """Test that is_enrolled is true for users enrolled in the course"""
+        CourseEnrollment.enroll(self.student, self.course.id)
+        url = reverse('instructor_api_v2:learner_detail', kwargs={
+            'course_id': str(self.course.id),
+            'email_or_username': self.student.username
+        })
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)  # noqa: PT009
+        data = response.json()
+        self.assertTrue(data['is_enrolled'])  # noqa: PT009
 
     def test_get_learner_by_email(self):
         """Test retrieving learner info by email"""
