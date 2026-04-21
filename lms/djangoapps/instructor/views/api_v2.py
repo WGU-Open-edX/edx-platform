@@ -1617,7 +1617,7 @@ class ToggleCertificateGenerationView(DeveloperErrorViewMixin, APIView):
         try:
             certs_api.set_cert_generation_enabled(course_key, enabled)
             return Response({'enabled': enabled}, status=status.HTTP_200_OK)
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             log.error("Error toggling certificate generation: %s", exc)
             return Response(
                 {'message': str(exc)},
@@ -1730,7 +1730,7 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
                 )
                 results['success'].append(learner)
 
-            except Exception as exc:
+            except Exception as exc:  # pylint: disable=broad-except
                 results['errors'].append({
                     'learner': learner,
                     'message': str(exc)
@@ -1774,7 +1774,7 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             log.error("Error removing certificate exception: %s", exc)
             return Response(
                 {'message': str(exc)},
@@ -1881,7 +1881,7 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                 certificate.invalidate()
                 results['success'].append(learner)
 
-            except Exception as exc:
+            except Exception as exc:  # pylint: disable=broad-except
                 results['errors'].append({
                     'learner': learner,
                     'message': str(exc)
@@ -1937,7 +1937,7 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             log.error("Error removing certificate invalidation: %s", exc)
             return Response(
                 {'message': str(exc)},
