@@ -1684,7 +1684,7 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
         "username": "john_harvard",
         "email": "john@example.com",
         "full_name": "John Harvard",
-        "progress_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/progress/john_harvard/",
+        "progress_url": "https://example.com/courses/course-v1:edX+DemoX+Demo_Course/progress/42/",
         "is_enrolled": true
     }
     ```

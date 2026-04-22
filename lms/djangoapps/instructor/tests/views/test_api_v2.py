@@ -53,7 +53,7 @@ class LearnerViewTestCase(ModuleStoreTestCase):
         self.assertEqual(data['email'], 'john@example.com')  # noqa: PT009
         self.assertEqual(data['full_name'], 'John Harvard')  # noqa: PT009
         self.assertEqual(data['progress_url'], expected_progress_url)  # noqa: PT009
-        self.assertFalse(data['is_enrolled'])  # noqa: PT009
+        assert not data['is_enrolled']
 
     def test_get_learner_by_username_enrolled(self):
         """Test that is_enrolled is true for users enrolled in the course"""
