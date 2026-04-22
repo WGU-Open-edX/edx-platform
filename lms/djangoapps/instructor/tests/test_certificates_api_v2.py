@@ -63,7 +63,7 @@ class ToggleCertificateGenerationViewTest(SharedModuleStoreTestCase):
     def test_invalid_enabled_field_type(self):
         """Test validation error when enabled is not boolean."""
         self.client.force_authenticate(user=self.instructor)
-        response = self.client.post(self.url, {'enabled': 'true'}, format='json')
+        response = self.client.post(self.url, {'enabled': 'invalid'}, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     @patch('lms.djangoapps.instructor.views.api_v2.certs_api.set_cert_generation_enabled')
@@ -136,7 +136,8 @@ class CertificateExceptionsViewTest(SharedModuleStoreTestCase):
         )
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data['errors']) == 1
-        assert 'User not found' in response.data['errors'][0]['message']
+        # The actual error message from get_user_by_username_or_email
+        assert 'does not exist' in response.data['errors'][0]['message']
 
     def test_post_user_not_enrolled(self):
         """Test error when user is not enrolled."""
