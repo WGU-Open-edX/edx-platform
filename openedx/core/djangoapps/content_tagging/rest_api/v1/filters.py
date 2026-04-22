@@ -8,6 +8,7 @@ from rest_framework.filters import BaseFilterBackend
 
 from ...models import TaxonomyOrg
 from ...rules import get_admin_orgs, get_user_orgs
+from ...utils import rules_cache
 
 
 class UserOrgFilterBackend(BaseFilterBackend):
@@ -62,7 +63,21 @@ class ObjectTagTaxonomyOrgFilterBackend(BaseFilterBackend):
     Filter for ObjectTagViewSet to only show taxonomies that the user can view.
     """
 
-    def filter_queryset(self, request, queryset, _):
+    def filter_queryset(self, request, queryset, view):
+        # Authz path
+        should_use_authz, course_key = getattr(view, '_authz_check', (False, None))
+        if should_use_authz and course_key:
+            # Only return tags from global taxonomies + the course's org taxonomies.
+            course_orgs = rules_cache.get_orgs([course_key.org]) if course_key.org else []
+            return queryset.filter(taxonomy__enabled=True).filter(
+                Exists(
+                    TaxonomyOrg.objects
+                    .filter(taxonomy=OuterRef("taxonomy_id"), rel_type=TaxonomyOrg.RelType.OWNER)
+                    .filter(Q(org=None) | Q(org__in=course_orgs))
+                )
+            ).prefetch_related('taxonomy__taxonomyorg_set')
+
+        # Legacy path
         if oel_tagging.is_taxonomy_admin(request.user):
             return queryset.prefetch_related('taxonomy__taxonomyorg_set')
 
