@@ -6,8 +6,6 @@ from unittest.mock import patch
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
-from xmodule.modulestore.tests.factories import CourseFactory
 
 from common.djangoapps.student.tests.factories import (
     CourseEnrollmentFactory,
@@ -17,6 +15,8 @@ from common.djangoapps.student.tests.factories import (
 from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.models import CertificateAllowlist, CertificateInvalidation
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
+from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
+from xmodule.modulestore.tests.factories import CourseFactory
 
 
 class ToggleCertificateGenerationViewTest(SharedModuleStoreTestCase):
