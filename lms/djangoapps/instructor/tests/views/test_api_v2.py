@@ -46,12 +46,12 @@ class LearnerViewTestCase(ModuleStoreTestCase):
             'student_id': self.student.id,
         })
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)  # noqa: PT009
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        self.assertEqual(data['username'], 'john_harvard')  # noqa: PT009
-        self.assertEqual(data['email'], 'john@example.com')  # noqa: PT009
-        self.assertEqual(data['full_name'], 'John Harvard')  # noqa: PT009
-        self.assertEqual(data['progress_url'], expected_progress_url)  # noqa: PT009
+        assert data['username'] == 'john_harvard'
+        assert data['email'] == 'john@example.com'
+        assert data['full_name'] == 'John Harvard'
+        assert data['progress_url'] == expected_progress_url
         assert not data['is_enrolled']
 
     def test_get_learner_by_username_enrolled(self):
