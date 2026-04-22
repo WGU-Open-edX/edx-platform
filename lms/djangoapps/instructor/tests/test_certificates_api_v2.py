@@ -6,18 +6,17 @@ from unittest.mock import patch
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
+from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
+from xmodule.modulestore.tests.factories import CourseFactory
 
 from common.djangoapps.student.tests.factories import (
     CourseEnrollmentFactory,
     InstructorFactory,
-    StaffFactory,
     UserFactory,
 )
+from lms.djangoapps.certificates.data import CertificateStatuses
 from lms.djangoapps.certificates.models import CertificateAllowlist, CertificateInvalidation
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
-from lms.djangoapps.certificates.data import CertificateStatuses
-from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
-from xmodule.modulestore.tests.factories import CourseFactory
 
 
 class ToggleCertificateGenerationViewTest(SharedModuleStoreTestCase):
@@ -345,7 +344,7 @@ class CertificateInvalidationsViewTest(SharedModuleStoreTestCase):
     @patch('lms.djangoapps.instructor.views.api_v2.certs_api.create_certificate_invalidation_entry')
     def test_post_successful(self, mock_create):
         """Test successful certificate invalidation."""
-        cert = GeneratedCertificateFactory.create(
+        GeneratedCertificateFactory.create(
             user=self.enrolled_student,
             course_id=self.course.id,
             status=CertificateStatuses.downloadable
