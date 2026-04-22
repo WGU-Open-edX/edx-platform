@@ -8,10 +8,11 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from common.djangoapps.student.models import CourseEnrollment
 from common.djangoapps.student.tests.factories import InstructorFactory, UserFactory
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor_task.models import InstructorTask
-from xmodule.modulestore.tests.django_utils import CourseEnrollment, ModuleStoreTestCase
+from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import BlockFactory, CourseFactory
 
 
