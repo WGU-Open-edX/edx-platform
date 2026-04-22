@@ -636,7 +636,6 @@ class IssuedCertificateSerializer(serializers.Serializer):
         help_text="Date when certificate was invalidated in ISO 8601 format"
     )
     invalidation_note = serializers.SerializerMethodField(
-        allow_null=True,
         help_text="Notes about the invalidation"
     )
 
@@ -684,7 +683,7 @@ class IssuedCertificateSerializer(serializers.Serializer):
         """Get invalidation notes from invalidation data in context."""
         invalidation_dict = self.context.get('invalidation_dict', {})
         invalidation_info = invalidation_dict.get(obj.user_id)
-        return invalidation_info['notes'] if invalidation_info else None
+        return invalidation_info.get('notes', '') if invalidation_info else ''
 
 
 class CertificateGenerationHistorySerializer(serializers.Serializer):
@@ -710,6 +709,16 @@ class CertificateGenerationHistorySerializer(serializers.Serializer):
     def get_details(self, obj):
         """Get details about what was generated/regenerated."""
         return str(obj.get_certificate_generation_candidates())
+
+
+class ToggleCertificateGenerationSerializer(serializers.Serializer):
+    """
+    Serializer for toggling certificate generation request.
+    """
+    enabled = serializers.BooleanField(
+        required=True,
+        help_text="Whether to enable or disable certificate generation"
+    )
 
 
 class RegenerateCertificatesSerializer(serializers.Serializer):

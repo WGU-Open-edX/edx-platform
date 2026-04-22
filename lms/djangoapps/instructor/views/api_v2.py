@@ -1611,16 +1611,26 @@ class ToggleCertificateGenerationView(DeveloperErrorViewMixin, APIView):
 
     def post(self, request, course_id):
         """Toggle certificate generation for a course."""
+        from .serializers_v2 import ToggleCertificateGenerationSerializer
+
         course_key = CourseKey.from_string(course_id)
-        enabled = request.data.get('enabled', False)
+        # Validate that the course exists before updating certificate settings
+        get_course_by_id(course_key)
+
+        # Validate request body
+        serializer = ToggleCertificateGenerationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        enabled = serializer.validated_data['enabled']
 
         try:
             certs_api.set_cert_generation_enabled(course_key, enabled)
             return Response({'enabled': enabled}, status=status.HTTP_200_OK)
-        except Exception as exc:  # pylint: disable=broad-except
-            log.error("Error toggling certificate generation: %s", exc)
+        except Exception:  # pylint: disable=broad-except
+            log.exception("Error toggling certificate generation for course %s", course_id)
             return Response(
-                {'message': str(exc)},
+                {'message': _('Unable to update certificate generation settings')},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1660,6 +1670,8 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
     def post(self, request, course_id):
         """Grant certificate exceptions (add to allowlist)."""
         course_key = CourseKey.from_string(course_id)
+        # Validate that the course exists
+        get_course_by_id(course_key)
         learners_input = request.data.get('learners', '')
         notes = request.data.get('notes', '')
 
@@ -1680,18 +1692,58 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
             'errors': []
         }
 
+        # Resolve all usernames/emails to users upfront
+        learner_to_user = {}
         for learner in learners:
             try:
                 user = get_user_by_username_or_email(learner)
-                if not user:
+                if user:
+                    learner_to_user[learner] = user
+                else:
                     results['errors'].append({
                         'learner': learner,
                         'message': _('User not found')
                     })
-                    continue
+            except Exception as exc:  # pylint: disable=broad-except
+                results['errors'].append({
+                    'learner': learner,
+                    'message': str(exc)
+                })
 
+        if not learner_to_user:
+            return Response(results, status=status.HTTP_200_OK)
+
+        users = list(learner_to_user.values())
+        user_ids = [u.id for u in users]
+
+        # Bulk fetch enrollments
+        enrollments = CourseEnrollment.objects.filter(
+            course_id=course_key,
+            user_id__in=user_ids
+        ).values_list('user_id', flat=True)
+        enrolled_user_ids = set(enrollments)
+
+        # Bulk fetch existing allowlist entries
+        existing_allowlist = CertificateAllowlist.objects.filter(
+            course_id=course_key,
+            user_id__in=user_ids
+        ).values_list('user_id', flat=True)
+        allowlisted_user_ids = set(existing_allowlist)
+
+        # Bulk fetch active invalidations
+        active_invalidations = CertificateInvalidation.objects.filter(
+            generated_certificate__course_id=course_key,
+            generated_certificate__user_id__in=user_ids,
+            active=True
+        ).values_list('generated_certificate__user_id', flat=True)
+        invalidated_user_ids = set(active_invalidations)
+
+        # Process each learner
+        exceptions_to_create = []
+        for learner, user in learner_to_user.items():
+            try:
                 # Check if user is enrolled
-                if not is_user_enrolled_in_course(user, course_key):
+                if user.id not in enrolled_user_ids:
                     results['errors'].append({
                         'learner': learner,
                         'message': _('User is not enrolled in this course')
@@ -1699,10 +1751,7 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
                     continue
 
                 # Check if user already has an exception
-                if CertificateAllowlist.objects.filter(
-                    course_id=course_key,
-                    user=user
-                ).exists():
+                if user.id in allowlisted_user_ids:
                     results['errors'].append({
                         'learner': learner,
                         'message': _('User already has a certificate exception')
@@ -1710,27 +1759,33 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
                     continue
 
                 # Check if user has an active invalidation
-                if CertificateInvalidation.objects.filter(
-                    generated_certificate__course_id=course_key,
-                    generated_certificate__user=user,
-                    active=True
-                ).exists():
+                if user.id in invalidated_user_ids:
                     results['errors'].append({
                         'learner': learner,
                         'message': _('User has an active certificate invalidation')
                     })
                     continue
 
-                # Grant exception
-                CertificateAllowlist.objects.create(
-                    user=user,
-                    course_id=course_key,
-                    allowlist=True,
-                    notes=notes
-                )
-                results['success'].append(learner)
+                # Add to list for processing
+                exceptions_to_create.append((learner, user))
 
             except Exception as exc:  # pylint: disable=broad-except
+                results['errors'].append({
+                    'learner': learner,
+                    'message': str(exc)
+                })
+
+        # Create all exceptions using the certificates API to ensure idempotency
+        # and avoid race conditions with the unique_together constraint
+        for learner, user in exceptions_to_create:
+            try:
+                certs_api.create_or_update_certificate_allowlist_entry(user, course_key, notes)
+                results['success'].append(learner)
+            except Exception as exc:  # pylint: disable=broad-except
+                log.exception(
+                    "Error creating certificate exception for user %s in course %s",
+                    user.id, course_key
+                )
                 results['errors'].append({
                     'learner': learner,
                     'message': str(exc)
@@ -1741,6 +1796,8 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
     def delete(self, request, course_id):
         """Remove certificate exception (remove from allowlist)."""
         course_key = CourseKey.from_string(course_id)
+        # Validate that the course exists
+        get_course_by_id(course_key)
         username = request.data.get('username')
 
         if not username:
@@ -1757,27 +1814,25 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Remove exception
-            deleted_count, __ = CertificateAllowlist.objects.filter(
-                course_id=course_key,
-                user=user
-            ).delete()
-
-            if deleted_count == 0:
+            # Remove exception via certificates API so any existing certificate
+            # is invalidated before the allowlist entry is removed
+            if not certs_api.get_allowlist_entry(user, course_key):
                 return Response(
                     {'message': _('No certificate exception found for this user')},
                     status=status.HTTP_404_NOT_FOUND
                 )
+
+            certs_api.remove_allowlist_entry(user, course_key)
 
             return Response(
                 {'message': _('Certificate exception removed successfully')},
                 status=status.HTTP_200_OK
             )
 
-        except Exception as exc:  # pylint: disable=broad-except
-            log.error("Error removing certificate exception: %s", exc)
+        except Exception:  # pylint: disable=broad-except
+            log.exception("Error removing certificate exception for course %s", course_id)
             return Response(
-                {'message': str(exc)},
+                {'message': _('Unable to remove certificate exception')},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1817,6 +1872,8 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
     def post(self, request, course_id):
         """Invalidate certificates."""
         course_key = CourseKey.from_string(course_id)
+        # Validate that the course exists
+        get_course_by_id(course_key)
         learners_input = request.data.get('learners', '')
         notes = request.data.get('notes', '')
 
@@ -1837,51 +1894,93 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
             'errors': []
         }
 
+        # Resolve all usernames/emails to users upfront
+        learner_to_user = {}
         for learner in learners:
             try:
                 user = get_user_by_username_or_email(learner)
-                if not user:
+                if user:
+                    learner_to_user[learner] = user
+                else:
                     results['errors'].append({
                         'learner': learner,
                         'message': _('User not found')
                     })
-                    continue
+            except Exception as exc:  # pylint: disable=broad-except
+                results['errors'].append({
+                    'learner': learner,
+                    'message': str(exc)
+                })
 
+        if not learner_to_user:
+            return Response(results, status=status.HTTP_200_OK)
+
+        users = list(learner_to_user.values())
+        user_ids = [u.id for u in users]
+
+        # Bulk fetch certificates
+        certificates = GeneratedCertificate.objects.filter(
+            course_id=course_key,
+            user_id__in=user_ids
+        ).select_related('user')
+        user_id_to_certificate = {cert.user_id: cert for cert in certificates}
+
+        # Bulk fetch existing active invalidations
+        active_invalidations = CertificateInvalidation.objects.filter(
+            generated_certificate__course_id=course_key,
+            generated_certificate__user_id__in=user_ids,
+            active=True
+        ).values_list('generated_certificate__user_id', flat=True)
+        invalidated_user_ids = set(active_invalidations)
+
+        # Process each learner
+        certificates_to_invalidate = []
+        for learner, user in learner_to_user.items():
+            try:
                 # Get the certificate
-                try:
-                    certificate = GeneratedCertificate.objects.get(
-                        course_id=course_key,
-                        user=user
-                    )
-                except GeneratedCertificate.DoesNotExist:
+                certificate = user_id_to_certificate.get(user.id)
+                if not certificate:
                     results['errors'].append({
                         'learner': learner,
                         'message': _('Certificate not found for this user')
                     })
                     continue
 
-                # Check if already invalidated
-                if CertificateInvalidation.objects.filter(
-                    generated_certificate=certificate,
-                    active=True
-                ).exists():
+                # Verify that the certificate is valid before invalidating (matches v1 behavior)
+                if not certificate.is_valid():
                     results['errors'].append({
                         'learner': learner,
-                        'message': _('Certificate is already invalidated')
+                        'message': _('Certificate is already invalid')
                     })
                     continue
 
-                # Invalidate certificate
-                CertificateInvalidation.objects.create(
-                    generated_certificate=certificate,
-                    invalidated_by=request.user,
-                    notes=notes,
-                    active=True
-                )
-                certificate.invalidate()
-                results['success'].append(learner)
+                # Add to list for processing
+                certificates_to_invalidate.append((learner, certificate))
 
             except Exception as exc:  # pylint: disable=broad-except
+                results['errors'].append({
+                    'learner': learner,
+                    'message': str(exc)
+                })
+
+        # Invalidate certificates using the certificates API to ensure idempotency
+        # and consistency with v1 behavior
+        for learner, certificate in certificates_to_invalidate:
+            try:
+                # Create invalidation entry (uses update_or_create for idempotency)
+                certs_api.create_certificate_invalidation_entry(
+                    certificate,
+                    request.user,
+                    notes,
+                )
+                # Invalidate the certificate with explicit source for auditability
+                certificate.invalidate(source='instructor_api_v2')
+                results['success'].append(learner)
+            except Exception as exc:  # pylint: disable=broad-except
+                log.exception(
+                    "Error invalidating certificate for user %s in course %s",
+                    certificate.user_id, course_key
+                )
                 results['errors'].append({
                     'learner': learner,
                     'message': str(exc)
@@ -1892,6 +1991,8 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
     def delete(self, request, course_id):
         """Re-validate certificate (remove invalidation)."""
         course_key = CourseKey.from_string(course_id)
+        # Validate that the course exists
+        get_course_by_id(course_key)
         username = request.data.get('username')
 
         if not username:
@@ -1920,16 +2021,26 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Remove invalidation
-            updated_count = CertificateInvalidation.objects.filter(
-                generated_certificate=certificate,
-                active=True
-            ).update(active=False)
+            # Remove invalidation and restore certificate generation
+            with transaction.atomic():
+                updated_count = CertificateInvalidation.objects.filter(
+                    generated_certificate=certificate,
+                    active=True
+                ).update(active=False)
 
-            if updated_count == 0:
-                return Response(
-                    {'message': _('No active invalidation found for this certificate')},
-                    status=status.HTTP_404_NOT_FOUND
+                if updated_count == 0:
+                    return Response(
+                        {'message': _('No active invalidation found for this certificate')},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                # Trigger certificate regeneration for this student
+                log.info(
+                    "Re-validating certificate for student %s in course %s - triggering regeneration",
+                    user.id, course_key
+                )
+                task_api.generate_certificates_for_students(
+                    request, course_key, student_set="specific_student", specific_student_id=user.id
                 )
 
             return Response(
@@ -1937,10 +2048,10 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as exc:  # pylint: disable=broad-except
-            log.error("Error removing certificate invalidation: %s", exc)
+        except Exception:  # pylint: disable=broad-except
+            log.exception("Error removing certificate invalidation for course %s", course_id)
             return Response(
-                {'message': str(exc)},
+                {'message': _('Unable to remove certificate invalidation')},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
