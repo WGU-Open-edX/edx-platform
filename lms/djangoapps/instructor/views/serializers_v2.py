@@ -721,6 +721,64 @@ class ToggleCertificateGenerationSerializer(serializers.Serializer):
     )
 
 
+class CertificateExceptionSerializer(serializers.Serializer):
+    """
+    Serializer for granting certificate exceptions (bulk).
+    """
+    learners = serializers.ListField(
+        child=serializers.CharField(max_length=255, allow_blank=False),
+        allow_empty=False,
+        help_text="List of usernames or email addresses of learners to grant exceptions"
+    )
+    notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='',
+        help_text="Notes about why the exception is being granted"
+    )
+
+
+class CertificateInvalidationSerializer(serializers.Serializer):
+    """
+    Serializer for invalidating certificates (bulk).
+    """
+    learners = serializers.ListField(
+        child=serializers.CharField(max_length=255, allow_blank=False),
+        allow_empty=False,
+        help_text="List of usernames or email addresses of learners to invalidate certificates"
+    )
+    notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='',
+        help_text="Notes about why the certificate is being invalidated"
+    )
+
+
+class RemoveCertificateExceptionSerializer(serializers.Serializer):
+    """
+    Serializer for removing a certificate exception.
+    """
+    username = serializers.CharField(
+        required=True,
+        max_length=255,
+        allow_blank=False,
+        help_text="Username or email address of the learner"
+    )
+
+
+class RemoveCertificateInvalidationSerializer(serializers.Serializer):
+    """
+    Serializer for re-validating a certificate (removing invalidation).
+    """
+    username = serializers.CharField(
+        required=True,
+        max_length=255,
+        allow_blank=False,
+        help_text="Username or email address of the learner"
+    )
+
+
 class RegenerateCertificatesSerializer(serializers.Serializer):
     """
     Serializer for regenerating certificates request.

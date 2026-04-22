@@ -108,7 +108,9 @@ from .serializers_v2 import (
     BetaTesterModifyRequestSerializerV2,
     BetaTesterModifyResponseSerializerV2,
     BlockDueDateSerializerV2,
+    CertificateExceptionSerializer,
     CertificateGenerationHistorySerializer,
+    CertificateInvalidationSerializer,
     CourseEnrollmentSerializerV2,
     CourseInformationSerializerV2,
     CourseTeamModifySerializer,
@@ -122,6 +124,9 @@ from .serializers_v2 import (
     ORASerializer,
     ORASummarySerializer,
     ProblemSerializer,
+    RemoveCertificateExceptionSerializer,
+    RemoveCertificateInvalidationSerializer,
+    ToggleCertificateGenerationSerializer,
     RegenerateCertificatesSerializer,
     TaskStatusSerializer,
     UnitExtensionSerializer,
@@ -1611,8 +1616,6 @@ class ToggleCertificateGenerationView(DeveloperErrorViewMixin, APIView):
 
     def post(self, request, course_id):
         """Toggle certificate generation for a course."""
-        from .serializers_v2 import ToggleCertificateGenerationSerializer
-
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists before updating certificate settings
         get_course_by_id(course_key)
@@ -1672,20 +1675,14 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists
         get_course_by_id(course_key)
-        learners_input = request.data.get('learners', '')
-        notes = request.data.get('notes', '')
 
-        # Handle both string (comma-separated) and list inputs
-        if isinstance(learners_input, str):
-            learners = [l.strip() for l in learners_input.split(',') if l.strip()]
-        else:
-            learners = learners_input
+        # Validate request data
+        serializer = CertificateExceptionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        if not learners:
-            return Response(
-                {'message': _('No learners provided')},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        learners = serializer.validated_data['learners']
+        notes = serializer.validated_data['notes']
 
         results = {
             'success': [],
@@ -1693,87 +1690,14 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
         }
 
         # Resolve all usernames/emails to users upfront
-        learner_to_user = {}
-        for learner in learners:
-            try:
-                user = get_user_by_username_or_email(learner)
-                if user:
-                    learner_to_user[learner] = user
-                else:
-                    results['errors'].append({
-                        'learner': learner,
-                        'message': _('User not found')
-                    })
-            except Exception as exc:  # pylint: disable=broad-except
-                results['errors'].append({
-                    'learner': learner,
-                    'message': str(exc)
-                })
+        learner_to_user, user_errors = _resolve_learners_to_users(learners)
+        results['errors'].extend(user_errors)
 
-        if not learner_to_user:
-            return Response(results, status=status.HTTP_200_OK)
-
-        users = list(learner_to_user.values())
-        user_ids = [u.id for u in users]
-
-        # Bulk fetch enrollments
-        enrollments = CourseEnrollment.objects.filter(
-            course_id=course_key,
-            user_id__in=user_ids
-        ).values_list('user_id', flat=True)
-        enrolled_user_ids = set(enrollments)
-
-        # Bulk fetch existing allowlist entries
-        existing_allowlist = CertificateAllowlist.objects.filter(
-            course_id=course_key,
-            user_id__in=user_ids
-        ).values_list('user_id', flat=True)
-        allowlisted_user_ids = set(existing_allowlist)
-
-        # Bulk fetch active invalidations
-        active_invalidations = CertificateInvalidation.objects.filter(
-            generated_certificate__course_id=course_key,
-            generated_certificate__user_id__in=user_ids,
-            active=True
-        ).values_list('generated_certificate__user_id', flat=True)
-        invalidated_user_ids = set(active_invalidations)
-
-        # Process each learner
-        exceptions_to_create = []
-        for learner, user in learner_to_user.items():
-            try:
-                # Check if user is enrolled
-                if user.id not in enrolled_user_ids:
-                    results['errors'].append({
-                        'learner': learner,
-                        'message': _('User is not enrolled in this course')
-                    })
-                    continue
-
-                # Check if user already has an exception
-                if user.id in allowlisted_user_ids:
-                    results['errors'].append({
-                        'learner': learner,
-                        'message': _('User already has a certificate exception')
-                    })
-                    continue
-
-                # Check if user has an active invalidation
-                if user.id in invalidated_user_ids:
-                    results['errors'].append({
-                        'learner': learner,
-                        'message': _('User has an active certificate invalidation')
-                    })
-                    continue
-
-                # Add to list for processing
-                exceptions_to_create.append((learner, user))
-
-            except Exception as exc:  # pylint: disable=broad-except
-                results['errors'].append({
-                    'learner': learner,
-                    'message': str(exc)
-                })
+        # Validate learners for certificate exceptions
+        exceptions_to_create, validation_errors = _validate_learners_for_certificate_exceptions(
+            learner_to_user, course_key
+        )
+        results['errors'].extend(validation_errors)
 
         # Create all exceptions using the certificates API to ensure idempotency
         # and avoid race conditions with the unique_together constraint
@@ -1798,13 +1722,13 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists
         get_course_by_id(course_key)
-        username = request.data.get('username')
 
-        if not username:
-            return Response(
-                {'message': _('No username provided')},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Validate request data
+        serializer = RemoveCertificateExceptionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        username = serializer.validated_data['username']
 
         try:
             user = get_user_by_username_or_email(username)
@@ -1835,6 +1759,189 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
                 {'message': _('Unable to remove certificate exception')},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+def _resolve_learners_to_users(learners):
+    """
+    Resolve a list of learner identifiers (usernames or emails) to User objects.
+
+    Args:
+        learners: List of learner identifiers (usernames or email addresses)
+
+    Returns:
+        tuple: (learner_to_user, errors) where:
+            - learner_to_user: Dictionary mapping learner identifiers to User objects
+            - errors: List of error dictionaries with 'learner' and 'message' keys
+    """
+    User = get_user_model()
+    learner_to_user = {}
+    errors = []
+
+    for learner in learners:
+        try:
+            user = get_user_by_username_or_email(learner)
+            if user:
+                learner_to_user[learner] = user
+            else:
+                errors.append({
+                    'learner': learner,
+                    'message': _('User not found')
+                })
+        except User.DoesNotExist:
+            errors.append({
+                'learner': learner,
+                'message': _('User not found')
+            })
+
+    return learner_to_user, errors
+
+
+def _validate_learners_for_certificate_exceptions(learner_to_user, course_key):
+    """
+    Validate learners to ensure they can receive certificate exceptions.
+
+    Args:
+        learner_to_user: Dictionary mapping learner identifiers to User objects
+        course_key: Course key for the course
+
+    Returns:
+        tuple: (exceptions_to_create, errors) where:
+            - exceptions_to_create: List of (learner, user) tuples ready for exception creation
+            - errors: List of error dictionaries with 'learner' and 'message' keys
+    """
+    errors = []
+    exceptions_to_create = []
+
+    if not learner_to_user:
+        return exceptions_to_create, errors
+
+    users = list(learner_to_user.values())
+    user_ids = [u.id for u in users]
+
+    # Bulk fetch active enrollments
+    enrollments = CourseEnrollment.objects.filter(
+        course_id=course_key,
+        user_id__in=user_ids,
+        is_active=True
+    ).values_list('user_id', flat=True)
+    enrolled_user_ids = set(enrollments)
+
+    # Bulk fetch existing active allowlist entries
+    existing_allowlist = CertificateAllowlist.objects.filter(
+        course_id=course_key,
+        user_id__in=user_ids,
+        allowlist=True
+    ).values_list('user_id', flat=True)
+    allowlisted_user_ids = set(existing_allowlist)
+
+    # Bulk fetch active invalidations
+    active_invalidations = CertificateInvalidation.objects.filter(
+        generated_certificate__course_id=course_key,
+        generated_certificate__user_id__in=user_ids,
+        active=True
+    ).values_list('generated_certificate__user_id', flat=True)
+    invalidated_user_ids = set(active_invalidations)
+
+    # Validate each learner
+    for learner, user in learner_to_user.items():
+        try:
+            # Check if user is enrolled
+            if user.id not in enrolled_user_ids:
+                errors.append({
+                    'learner': learner,
+                    'message': _('User is not enrolled in this course')
+                })
+                continue
+
+            # Check if user already has an exception
+            if user.id in allowlisted_user_ids:
+                errors.append({
+                    'learner': learner,
+                    'message': _('User already has a certificate exception')
+                })
+                continue
+
+            # Check if user has an active invalidation
+            if user.id in invalidated_user_ids:
+                errors.append({
+                    'learner': learner,
+                    'message': _('User has an active certificate invalidation')
+                })
+                continue
+
+            # Learner is ready for exception creation
+            exceptions_to_create.append((learner, user))
+
+        except Exception as exc:  # pylint: disable=broad-except
+            errors.append({
+                'learner': learner,
+                'message': str(exc)
+            })
+
+    return exceptions_to_create, errors
+
+
+def _validate_certificates_for_invalidation(learner_to_user, course_key):
+    """
+    Validate certificates for a set of users to ensure they can be invalidated.
+
+    Args:
+        learner_to_user: Dictionary mapping learner identifiers to User objects
+        course_key: Course key for the course
+
+    Returns:
+        tuple: (certificates_to_invalidate, errors) where:
+            - certificates_to_invalidate: List of (learner, certificate) tuples ready for invalidation
+            - errors: List of error dictionaries with 'learner' and 'message' keys
+    """
+    errors = []
+    certificates_to_invalidate = []
+
+    if not learner_to_user:
+        return certificates_to_invalidate, errors
+
+    users = list(learner_to_user.values())
+    user_ids = [u.id for u in users]
+
+    # Bulk fetch certificates (exclude deleted/deleting status)
+    certificates = GeneratedCertificate.objects.filter(
+        course_id=course_key,
+        user_id__in=user_ids
+    ).exclude(
+        status__in=[CertificateStatuses.deleted, CertificateStatuses.deleting]
+    ).select_related('user')
+    user_id_to_certificate = {cert.user_id: cert for cert in certificates}
+
+    # Validate each learner's certificate
+    for learner, user in learner_to_user.items():
+        try:
+            # Check if certificate exists
+            certificate = user_id_to_certificate.get(user.id)
+            if not certificate:
+                errors.append({
+                    'learner': learner,
+                    'message': _('Certificate not found for this user')
+                })
+                continue
+
+            # Verify that the certificate is valid before invalidating
+            if not certificate.is_valid():
+                errors.append({
+                    'learner': learner,
+                    'message': _('Certificate is already invalid')
+                })
+                continue
+
+            # Certificate is ready for invalidation
+            certificates_to_invalidate.append((learner, certificate))
+
+        except Exception as exc:  # pylint: disable=broad-except
+            errors.append({
+                'learner': learner,
+                'message': str(exc)
+            })
+
+    return certificates_to_invalidate, errors
 
 
 class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
@@ -1874,20 +1981,14 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists
         get_course_by_id(course_key)
-        learners_input = request.data.get('learners', '')
-        notes = request.data.get('notes', '')
 
-        # Handle both string (comma-separated) and list inputs
-        if isinstance(learners_input, str):
-            learners = [l.strip() for l in learners_input.split(',') if l.strip()]
-        else:
-            learners = learners_input
+        # Validate request data
+        serializer = CertificateInvalidationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        if not learners:
-            return Response(
-                {'message': _('No learners provided')},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        learners = serializer.validated_data['learners']
+        notes = serializer.validated_data['notes']
 
         results = {
             'success': [],
@@ -1895,65 +1996,14 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
         }
 
         # Resolve all usernames/emails to users upfront
-        learner_to_user = {}
-        for learner in learners:
-            try:
-                user = get_user_by_username_or_email(learner)
-                if user:
-                    learner_to_user[learner] = user
-                else:
-                    results['errors'].append({
-                        'learner': learner,
-                        'message': _('User not found')
-                    })
-            except Exception as exc:  # pylint: disable=broad-except
-                results['errors'].append({
-                    'learner': learner,
-                    'message': str(exc)
-                })
+        learner_to_user, user_errors = _resolve_learners_to_users(learners)
+        results['errors'].extend(user_errors)
 
-        if not learner_to_user:
-            return Response(results, status=status.HTTP_200_OK)
-
-        users = list(learner_to_user.values())
-        user_ids = [u.id for u in users]
-
-        # Bulk fetch certificates
-        certificates = GeneratedCertificate.objects.filter(
-            course_id=course_key,
-            user_id__in=user_ids
-        ).select_related('user')
-        user_id_to_certificate = {cert.user_id: cert for cert in certificates}
-
-        # Process each learner
-        certificates_to_invalidate = []
-        for learner, user in learner_to_user.items():
-            try:
-                # Get the certificate
-                certificate = user_id_to_certificate.get(user.id)
-                if not certificate:
-                    results['errors'].append({
-                        'learner': learner,
-                        'message': _('Certificate not found for this user')
-                    })
-                    continue
-
-                # Verify that the certificate is valid before invalidating (matches v1 behavior)
-                if not certificate.is_valid():
-                    results['errors'].append({
-                        'learner': learner,
-                        'message': _('Certificate is already invalid')
-                    })
-                    continue
-
-                # Add to list for processing
-                certificates_to_invalidate.append((learner, certificate))
-
-            except Exception as exc:  # pylint: disable=broad-except
-                results['errors'].append({
-                    'learner': learner,
-                    'message': str(exc)
-                })
+        # Validate certificates for invalidation
+        certificates_to_invalidate, validation_errors = _validate_certificates_for_invalidation(
+            learner_to_user, course_key
+        )
+        results['errors'].extend(validation_errors)
 
         # Invalidate certificates using the certificates API to ensure idempotency
         # and consistency with v1 behavior
@@ -1985,13 +2035,13 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
         course_key = CourseKey.from_string(course_id)
         # Validate that the course exists
         get_course_by_id(course_key)
-        username = request.data.get('username')
 
-        if not username:
-            return Response(
-                {'message': _('No username provided')},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Validate request data
+        serializer = RemoveCertificateInvalidationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        username = serializer.validated_data['username']
 
         try:
             user = get_user_by_username_or_email(username)
@@ -2001,9 +2051,11 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Get the certificate
+            # Get the certificate (exclude deleted/deleting status)
             try:
-                certificate = GeneratedCertificate.objects.get(
+                certificate = GeneratedCertificate.objects.exclude(
+                    status__in=[CertificateStatuses.deleted, CertificateStatuses.deleting]
+                ).get(
                     course_id=course_key,
                     user=user
                 )
