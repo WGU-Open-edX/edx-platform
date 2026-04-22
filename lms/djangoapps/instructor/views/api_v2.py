@@ -124,11 +124,11 @@ from .serializers_v2 import (
     ORASerializer,
     ORASummarySerializer,
     ProblemSerializer,
+    RegenerateCertificatesSerializer,
     RemoveCertificateExceptionSerializer,
     RemoveCertificateInvalidationSerializer,
-    ToggleCertificateGenerationSerializer,
-    RegenerateCertificatesSerializer,
     TaskStatusSerializer,
+    ToggleCertificateGenerationSerializer,
     UnitExtensionSerializer,
 )
 from .tools import find_unit, get_units_with_due_date, keep_field_private, set_due_date_extension, title_or_url
@@ -1773,24 +1773,17 @@ def _resolve_learners_to_users(learners):
             - learner_to_user: Dictionary mapping learner identifiers to User objects
             - errors: List of error dictionaries with 'learner' and 'message' keys
     """
-    User = get_user_model()
     learner_to_user = {}
     errors = []
 
     for learner in learners:
         try:
             user = get_user_by_username_or_email(learner)
-            if user:
-                learner_to_user[learner] = user
-            else:
-                errors.append({
-                    'learner': learner,
-                    'message': _('User not found')
-                })
-        except User.DoesNotExist:
+            learner_to_user[learner] = user
+        except User.DoesNotExist as exc:
             errors.append({
                 'learner': learner,
-                'message': _('User not found')
+                'message': str(exc)
             })
 
     return learner_to_user, errors
