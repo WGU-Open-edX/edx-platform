@@ -1925,14 +1925,6 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
         ).select_related('user')
         user_id_to_certificate = {cert.user_id: cert for cert in certificates}
 
-        # Bulk fetch existing active invalidations
-        active_invalidations = CertificateInvalidation.objects.filter(
-            generated_certificate__course_id=course_key,
-            generated_certificate__user_id__in=user_ids,
-            active=True
-        ).values_list('generated_certificate__user_id', flat=True)
-        invalidated_user_ids = set(active_invalidations)
-
         # Process each learner
         certificates_to_invalidate = []
         for learner, user in learner_to_user.items():
