@@ -777,7 +777,7 @@ class RemoveCertificateExceptionSerializer(serializers.Serializer):
             user = get_user_by_username_or_email(value)
             return user
         except User.DoesNotExist as exc:
-            raise serializers.ValidationError(str(exc))
+            raise serializers.ValidationError(str(exc)) from exc
 
 
 class RemoveCertificateInvalidationSerializer(serializers.Serializer):
@@ -797,7 +797,7 @@ class RemoveCertificateInvalidationSerializer(serializers.Serializer):
             user = get_user_by_username_or_email(value)
             return user
         except User.DoesNotExist as exc:
-            raise serializers.ValidationError(str(exc))
+            raise serializers.ValidationError(str(exc)) from exc
 
 
 class RegenerateCertificatesSerializer(serializers.Serializer):
@@ -824,7 +824,7 @@ class RegenerateCertificatesSerializer(serializers.Serializer):
     )
 
 
-class LearnerSerializer(serializers.Serializer):
+class LearnerInputSerializer(serializers.Serializer):
     """
     Serializer for validating learner identifier (username or email).
     """
@@ -841,9 +841,9 @@ class LearnerSerializer(serializers.Serializer):
             user = get_user_by_username_or_email(value)
             return user
         except User.DoesNotExist as exc:
-            raise serializers.ValidationError(str(exc))
-        except User.MultipleObjectsReturned:
-            raise serializers.ValidationError('Multiple learners found for the given identifier')
+            raise serializers.ValidationError(str(exc)) from exc
+        except User.MultipleObjectsReturned as exc:
+            raise serializers.ValidationError('Multiple learners found for the given identifier') from exc
 
 
 class CourseEnrollmentSerializerV2(serializers.Serializer):

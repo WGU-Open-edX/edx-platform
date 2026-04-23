@@ -120,6 +120,7 @@ from .serializers_v2 import (
     GradingConfigSerializer,
     InstructorTaskListSerializer,
     IssuedCertificateSerializer,
+    LearnerInputSerializer,
     LearnerSerializer,
     ORASerializer,
     ORASummarySerializer,
@@ -2212,7 +2213,7 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
             )
 
         # Validate learner identifier
-        serializer = LearnerSerializer(data={'email_or_username': email_or_username})
+        serializer = LearnerInputSerializer(data={'email_or_username': email_or_username})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2353,7 +2354,7 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
         learner_identifier = request.query_params.get('email_or_username')
         if learner_identifier:
             # Validate learner identifier
-            serializer = LearnerSerializer(data={'email_or_username': learner_identifier})
+            serializer = LearnerInputSerializer(data={'email_or_username': learner_identifier})
             if not serializer.is_valid():
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
