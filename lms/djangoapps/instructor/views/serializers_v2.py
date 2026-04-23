@@ -9,6 +9,7 @@ import logging
 from urllib.parse import urlparse
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.utils.html import escape
 from django.utils.translation import gettext as _
 from edx_when.api import is_enabled_for_course
@@ -16,6 +17,7 @@ from rest_framework import serializers
 
 from common.djangoapps.course_modes.models import CourseMode
 from common.djangoapps.student.models import CourseEnrollment
+from common.djangoapps.student.models.user import get_user_by_username_or_email
 from common.djangoapps.student.roles import (
     CourseFinanceAdminRole,
     CourseInstructorRole,
@@ -36,6 +38,7 @@ from xmodule.modulestore.django import modulestore
 
 from .tools import DashboardError, get_student_from_identifier, parse_datetime
 
+User = get_user_model()
 log = logging.getLogger(__name__)
 
 
@@ -731,6 +734,7 @@ class CertificateExceptionSerializer(serializers.Serializer):
         help_text="List of usernames or email addresses of learners to grant exceptions"
     )
     notes = serializers.CharField(
+        max_length=1000,
         required=False,
         allow_blank=True,
         default='',
@@ -748,6 +752,7 @@ class CertificateInvalidationSerializer(serializers.Serializer):
         help_text="List of usernames or email addresses of learners to invalidate certificates"
     )
     notes = serializers.CharField(
+        max_length=1000,
         required=False,
         allow_blank=True,
         default='',
@@ -766,6 +771,14 @@ class RemoveCertificateExceptionSerializer(serializers.Serializer):
         help_text="Username or email address of the learner"
     )
 
+    def validate_username(self, value):
+        """Validate and resolve username/email to user object."""
+        try:
+            user = get_user_by_username_or_email(value)
+            return user
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError(str(exc))
+
 
 class RemoveCertificateInvalidationSerializer(serializers.Serializer):
     """
@@ -777,6 +790,14 @@ class RemoveCertificateInvalidationSerializer(serializers.Serializer):
         allow_blank=False,
         help_text="Username or email address of the learner"
     )
+
+    def validate_username(self, value):
+        """Validate and resolve username/email to user object."""
+        try:
+            user = get_user_by_username_or_email(value)
+            return user
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError(str(exc))
 
 
 class RegenerateCertificatesSerializer(serializers.Serializer):
@@ -801,6 +822,28 @@ class RegenerateCertificatesSerializer(serializers.Serializer):
         default='all',
         help_text="Student set filter"
     )
+
+
+class LearnerSerializer(serializers.Serializer):
+    """
+    Serializer for validating learner identifier (username or email).
+    """
+    email_or_username = serializers.CharField(
+        required=True,
+        max_length=255,
+        allow_blank=False,
+        help_text="Username or email address of the learner"
+    )
+
+    def validate_email_or_username(self, value):
+        """Validate and resolve username/email to user object."""
+        try:
+            user = get_user_by_username_or_email(value)
+            return user
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError(str(exc))
+        except User.MultipleObjectsReturned:
+            raise serializers.ValidationError('Multiple learners found for the given identifier')
 
 
 class CourseEnrollmentSerializerV2(serializers.Serializer):

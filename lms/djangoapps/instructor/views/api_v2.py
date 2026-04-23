@@ -1634,7 +1634,7 @@ class ToggleCertificateGenerationView(DeveloperErrorViewMixin, APIView):
             log.exception("Error toggling certificate generation for course %s", course_id)
             return Response(
                 {'message': _('Unable to update certificate generation settings')},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -1728,16 +1728,9 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        username = serializer.validated_data['username']
+        user = serializer.validated_data['username']
 
         try:
-            user = get_user_by_username_or_email(username)
-            if not user:
-                return Response(
-                    {'message': _('User not found')},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
             # Remove exception via certificates API so any existing certificate
             # is invalidated before the allowlist entry is removed
             if not certs_api.get_allowlist_entry(user, course_key):
@@ -1757,7 +1750,7 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
             log.exception("Error removing certificate exception for course %s", course_id)
             return Response(
                 {'message': _('Unable to remove certificate exception')},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -2034,16 +2027,9 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        username = serializer.validated_data['username']
+        user = serializer.validated_data['username']
 
         try:
-            user = get_user_by_username_or_email(username)
-            if not user:
-                return Response(
-                    {'message': _('User not found')},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
             # Get the certificate (exclude deleted/deleting status)
             try:
                 certificate = GeneratedCertificate.objects.exclude(
@@ -2076,20 +2062,27 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                     "Re-validating certificate for student %s in course %s - triggering regeneration",
                     user.id, course_key
                 )
-                task_api.generate_certificates_for_students(
-                    request, course_key, student_set="specific_student", specific_student_id=user.id
-                )
+                try:
+                    task_api.generate_certificates_for_students(
+                        request, course_key, student_set="specific_student", specific_student_id=user.id
+                    )
+                except Exception as cert_gen_error:  # pylint: disable=broad-except
+                    # Log but don't fail - the invalidation was already removed
+                    log.warning(
+                        "Certificate regeneration failed for student %s in course %s: %s",
+                        user.id, course_key, str(cert_gen_error)
+                    )
 
             return Response(
                 {'message': _('Certificate invalidation removed successfully')},
                 status=status.HTTP_200_OK
             )
 
-        except Exception:  # pylint: disable=broad-except
-            log.exception("Error removing certificate invalidation for course %s", course_id)
+        except Exception as exc:  # pylint: disable=broad-except
+            log.exception("Error removing certificate invalidation for course %s: %s", course_id, str(exc))
             return Response(
-                {'message': _('Unable to remove certificate invalidation')},
-                status=status.HTTP_400_BAD_REQUEST
+                {'message': _('Unable to remove certificate invalidation: {}').format(str(exc))},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -2218,19 +2211,12 @@ class LearnerView(DeveloperErrorViewMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        UserModel = get_user_model()
-        try:
-            student = get_user_by_username_or_email(email_or_username)
-        except UserModel.DoesNotExist:
-            return Response(
-                {'error': 'Learner not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except UserModel.MultipleObjectsReturned:
-            return Response(
-                {'error': 'Multiple learners found for the given identifier'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Validate learner identifier
+        serializer = LearnerSerializer(data={'email_or_username': email_or_username})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        student = serializer.validated_data['email_or_username']
 
         # Build progress URL (MFE or legacy depending on feature flag)
         if course_home_mfe_progress_tab_is_active(course_key):
@@ -2366,19 +2352,12 @@ class ProblemView(DeveloperErrorViewMixin, APIView):
 
         learner_identifier = request.query_params.get('email_or_username')
         if learner_identifier:
-            UserModel = get_user_model()
-            try:
-                student = get_user_by_username_or_email(learner_identifier)
-            except UserModel.DoesNotExist:
-                return Response(
-                    {'error': 'Learner not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            except UserModel.MultipleObjectsReturned:
-                return Response(
-                    {'error': 'Multiple learners found for the given identifier'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            # Validate learner identifier
+            serializer = LearnerSerializer(data={'email_or_username': learner_identifier})
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            student = serializer.validated_data['email_or_username']
 
             try:
                 student_module = StudentModule.objects.get(

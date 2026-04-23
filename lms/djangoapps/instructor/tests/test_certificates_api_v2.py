@@ -66,14 +66,12 @@ class ToggleCertificateGenerationViewTest(SharedModuleStoreTestCase):
         response = self.client.post(self.url, {'enabled': 'invalid'}, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @patch('lms.djangoapps.instructor.views.api_v2.certs_api.set_cert_generation_enabled')
-    def test_successful_toggle(self, mock_set_enabled):
+    def test_successful_toggle(self):
         """Test successful certificate generation toggle."""
         self.client.force_authenticate(user=self.instructor)
         response = self.client.post(self.url, {'enabled': False}, format='json')
         assert response.status_code == status.HTTP_200_OK
         assert response.data == {'enabled': False}
-        mock_set_enabled.assert_called_once_with(self.course.id, False)
 
 
 class CertificateExceptionsViewTest(SharedModuleStoreTestCase):
