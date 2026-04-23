@@ -1996,15 +1996,16 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
         # and consistency with v1 behavior
         for learner, certificate in certificates_to_invalidate:
             try:
-                # Create invalidation entry (uses update_or_create for idempotency)
-                certs_api.create_certificate_invalidation_entry(
-                    certificate,
-                    request.user,
-                    notes,
-                )
-                # Invalidate the certificate with explicit source for auditability
-                certificate.invalidate(source='instructor_api_v2')
-                results['success'].append(learner)
+                with transaction.atomic():
+                    # Create invalidation entry (uses update_or_create for idempotency)
+                    certs_api.create_certificate_invalidation_entry(
+                        certificate,
+                        request.user,
+                        notes,
+                    )
+                    # Invalidate the certificate with explicit source for auditability
+                    certificate.invalidate(source='instructor_api_v2')
+                    results['success'].append(learner)
             except Exception as exc:  # pylint: disable=broad-except
                 log.exception(
                     "Error invalidating certificate for user %s in course %s",
