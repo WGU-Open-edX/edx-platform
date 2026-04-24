@@ -188,11 +188,11 @@ class TestSearchApi(ModuleStoreTestCase):
         tagging_api.add_tag_to_taxonomy(self.taxonomyB, "four")
 
         # Create a collection:
-        self.learning_package = content_api.get_learning_package_by_key(self.library.key)
+        self.learning_package = content_api.get_learning_package_by_ref(str(self.library.key))
         with freeze_time(self.created_date):
             self.collection = content_api.create_collection(
                 learning_package_id=self.learning_package.id,
-                key="MYCOL",
+                collection_code="MYCOL",
                 title="my_collection",
                 created_by=None,
                 description="my collection description"
@@ -202,7 +202,7 @@ class TestSearchApi(ModuleStoreTestCase):
             )
         self.collection_dict = {
             "id": "lib-collectionorg1libmycol-5b647617",
-            "block_id": self.collection.key,
+            "block_id": self.collection.collection_code,
             "usage_key": str(self.collection_key),
             "type": "collection",
             "display_name": "my_collection",
@@ -449,19 +449,32 @@ class TestSearchApi(ModuleStoreTestCase):
 
     @override_settings(MEILISEARCH_ENABLED=True)
     def test_init_meilisearch_index(self, mock_meilisearch) -> None:
-        # Test index already exists
+        # Test index already exists, is populated, and correctly configured
+        mock_index = Mock()
+        mock_index.primary_key = "id"
+        mock_index.get_stats.return_value = Mock(number_of_documents=100)
+        mock_index.get_settings.return_value = {
+            "distinctAttribute": "usage_key",
+            "filterableAttributes": list(api.INDEX_FILTERABLE_ATTRIBUTES),
+            "searchableAttributes": list(api.INDEX_SEARCHABLE_ATTRIBUTES),
+            "sortableAttributes": list(api.INDEX_SORTABLE_ATTRIBUTES),
+            "rankingRules": list(api.INDEX_RANKING_RULES),
+        }
+        mock_meilisearch.return_value.get_index.return_value = mock_index
+
         api.init_index()
         mock_meilisearch.return_value.swap_indexes.assert_not_called()
         mock_meilisearch.return_value.create_index.assert_not_called()
         mock_meilisearch.return_value.delete_index.assert_not_called()
 
-        # Test index already exists and has no documents
-        mock_meilisearch.return_value.get_stats.return_value = 0
+        # Test index already exists and is empty but correctly configured
+        mock_index.get_stats.return_value = Mock(number_of_documents=0)
         api.init_index()
         mock_meilisearch.return_value.swap_indexes.assert_not_called()
         mock_meilisearch.return_value.create_index.assert_not_called()
         mock_meilisearch.return_value.delete_index.assert_not_called()
 
+        # Test index does not exist — should create it
         mock_meilisearch.return_value.get_index.side_effect = [
             MeilisearchApiError("Testing reindex", Mock(text='{"code":"index_not_found"}')),
             MeilisearchApiError("Testing reindex", Mock(text='{"code":"index_not_found"}')),
@@ -523,7 +536,7 @@ class TestSearchApi(ModuleStoreTestCase):
 
         def mocked_from_component(lib_key, component):
             # Simulate an error when processing problem 1
-            if component.key == 'xblock.v1:problem:p1':
+            if component.entity_ref == 'xblock.v1:problem:p1':
                 raise Exception('Error')
 
             return orig_from_component(lib_key, component)
@@ -709,7 +722,7 @@ class TestSearchApi(ModuleStoreTestCase):
             for collection in (collection2, collection1):
                 library_api.update_library_collection_items(
                     self.library.key,
-                    collection_key=collection.key,
+                    collection_key=collection.collection_code,
                     opaque_keys=[
                         self.problem1.usage_key,
                     ],
@@ -719,8 +732,8 @@ class TestSearchApi(ModuleStoreTestCase):
         lib_access, _ = SearchAccess.objects.get_or_create(context_key=self.library.key)
         doc_collection1_created = {
             "id": "lib-collectionorg1libcol1-283a79c9",
-            "block_id": collection1.key,
-            "usage_key": f"lib-collection:org1:lib:{collection1.key}",
+            "block_id": collection1.collection_code,
+            "usage_key": f"lib-collection:org1:lib:{collection1.collection_code}",
             "type": "collection",
             "display_name": "Collection 1",
             "description": "First Collection",
@@ -737,8 +750,8 @@ class TestSearchApi(ModuleStoreTestCase):
         }
         doc_collection2_created = {
             "id": "lib-collectionorg1libcol2-46823d4d",
-            "block_id": collection2.key,
-            "usage_key": f"lib-collection:org1:lib:{collection2.key}",
+            "block_id": collection2.collection_code,
+            "usage_key": f"lib-collection:org1:lib:{collection2.collection_code}",
             "type": "collection",
             "display_name": "Collection 2",
             "description": "Second Collection",
@@ -755,8 +768,8 @@ class TestSearchApi(ModuleStoreTestCase):
         }
         doc_collection2_updated = {
             "id": "lib-collectionorg1libcol2-46823d4d",
-            "block_id": collection2.key,
-            "usage_key": f"lib-collection:org1:lib:{collection2.key}",
+            "block_id": collection2.collection_code,
+            "usage_key": f"lib-collection:org1:lib:{collection2.collection_code}",
             "type": "collection",
             "display_name": "Collection 2",
             "description": "Second Collection",
@@ -773,8 +786,8 @@ class TestSearchApi(ModuleStoreTestCase):
         }
         doc_collection1_updated = {
             "id": "lib-collectionorg1libcol1-283a79c9",
-            "block_id": collection1.key,
-            "usage_key": f"lib-collection:org1:lib:{collection1.key}",
+            "block_id": collection1.collection_code,
+            "usage_key": f"lib-collection:org1:lib:{collection1.collection_code}",
             "type": "collection",
             "display_name": "Collection 1",
             "description": "First Collection",
@@ -891,7 +904,7 @@ class TestSearchApi(ModuleStoreTestCase):
         with freeze_time(updated_date):
             library_api.update_library_collection_items(
                 self.library.key,
-                collection_key=self.collection.key,
+                collection_key=self.collection.collection_code,
                 opaque_keys=[
                     self.problem1.usage_key,
                     self.unit.container_key
@@ -905,14 +918,14 @@ class TestSearchApi(ModuleStoreTestCase):
             "id": self.doc_problem1["id"],
             "collections": {
                 "display_name": [self.collection.title],
-                "key": [self.collection.key],
+                "key": [self.collection.collection_code],
             },
         }
         doc_unit_with_collection = {
             "id": self.unit_dict["id"],
             "collections": {
                 "display_name": [self.collection.title],
-                "key": [self.collection.key],
+                "key": [self.collection.collection_code],
             },
         }
 
@@ -931,7 +944,7 @@ class TestSearchApi(ModuleStoreTestCase):
         # Soft-delete the collection
         content_api.delete_collection(
             self.collection.learning_package_id,
-            self.collection.key,
+            self.collection.collection_code,
         )
 
         doc_problem_without_collection = {
@@ -966,7 +979,7 @@ class TestSearchApi(ModuleStoreTestCase):
         with freeze_time(restored_date):
             content_api.restore_collection(
                 self.collection.learning_package_id,
-                self.collection.key,
+                self.collection.collection_code,
             )
 
         doc_collection = copy.deepcopy(self.collection_dict)
@@ -988,7 +1001,7 @@ class TestSearchApi(ModuleStoreTestCase):
         # Hard-delete the collection
         content_api.delete_collection(
             self.collection.learning_package_id,
-            self.collection.key,
+            self.collection.collection_code,
             hard_delete=True,
         )
 
