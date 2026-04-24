@@ -36,7 +36,7 @@ from common.djangoapps.student.tests.factories import (
     UserFactory,
 )
 from lms.djangoapps.certificates.data import CertificateStatuses
-from lms.djangoapps.certificates.models import CertificateGenerationHistory
+from lms.djangoapps.certificates.models import CertificateAllowlist, CertificateGenerationHistory
 from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
 from lms.djangoapps.courseware.models import StudentModule
 from lms.djangoapps.instructor.access import ROLE_DISPLAY_NAMES
