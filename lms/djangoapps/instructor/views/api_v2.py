@@ -1258,6 +1258,169 @@ class IssuedCertificatesView(ListAPIView):
     permission_name = permissions.VIEW_ISSUED_CERTIFICATES
     serializer_class = IssuedCertificateSerializer
 
+    def _create_certificate_dict_for_allowlisted_user(self, allowlist_entry, enrollment_dict):
+        """
+        Create a dictionary representing certificate data for an allowlisted user
+        who may not have a GeneratedCertificate record yet.
+        """
+        user = allowlist_entry.user
+        enrollment_mode = enrollment_dict.get(user.id, '')
+
+        # Determine certificate status based on enrollment
+        if enrollment_mode == 'audit':
+            cert_status = 'audit_notpassing'
+        elif enrollment_mode == 'verified':
+            cert_status = 'downloadable'
+        else:
+            cert_status = 'notpassing'
+
+        return {
+            'username': user.username,
+            'email': user.email,
+            'enrollment_track': enrollment_mode,
+            'certificate_status': cert_status,
+            'special_case': 'Exception',
+            'exception_granted': allowlist_entry.created.isoformat(),
+            'exception_notes': allowlist_entry.notes or '',
+            'invalidated_by': None,
+            'invalidation_date': None,
+            'invalidation_note': '',
+        }
+
+    def _create_certificate_dict_for_invalidated_user(self, invalidation, enrollment_dict):
+        """
+        Create a dictionary representing certificate data for an invalidated certificate
+        that may not have a GeneratedCertificate record.
+        """
+        user = invalidation.generated_certificate.user if invalidation.generated_certificate else None
+        enrollment_mode = enrollment_dict.get(user.id, '') if user else ''
+
+        return {
+            'username': user.username if user else '',
+            'email': user.email if user else '',
+            'enrollment_track': enrollment_mode,
+            'certificate_status': 'unavailable',
+            'special_case': 'Invalidation',
+            'exception_granted': None,
+            'exception_notes': '',
+            'invalidated_by': invalidation.invalidated_by.email if invalidation.invalidated_by else '',
+            'invalidation_date': invalidation.created.isoformat(),
+            'invalidation_note': invalidation.notes or '',
+        }
+
+    def list(self, request, *args, **kwargs):
+        """
+        Override list to handle granted_exceptions and invalidated filters specially.
+
+        For these filters, we need to show ALL relevant users,
+        even those without GeneratedCertificate records yet.
+        """
+        filter_type = request.query_params.get("filter", "all")
+
+        if filter_type == "granted_exceptions":
+            course_id = self.kwargs["course_id"]
+            course_key = CourseKey.from_string(course_id)
+            search = request.query_params.get("search", "").strip()
+
+            # Get enrollment data for context
+            enrollments = CourseEnrollment.objects.filter(
+                course_id=course_key
+            ).select_related('user')
+            enrollment_dict = {e.user_id: e.mode for e in enrollments}
+
+            # Get all allowlist entries
+            allowlist_qs = CertificateAllowlist.objects.filter(
+                course_id=course_key,
+                allowlist=True
+            ).select_related('user')
+
+            # Apply search filter
+            if search:
+                allowlist_qs = allowlist_qs.filter(
+                    Q(user__username__icontains=search) | Q(user__email__icontains=search)
+                )
+
+            # Get existing certificates for allowlisted users
+            allowlist_user_ids = list(allowlist_qs.values_list('user_id', flat=True))
+            existing_certs = GeneratedCertificate.objects.filter(
+                course_id=course_key,
+                user_id__in=allowlist_user_ids
+            ).select_related('user')
+            existing_cert_user_ids = set(existing_certs.values_list('user_id', flat=True))
+
+            # Build list of certificate data
+            certificate_data = []
+
+            # Add existing certificates
+            context = self.get_serializer_context()
+            for cert in existing_certs:
+                serializer = self.get_serializer(cert, context=context)
+                certificate_data.append(serializer.data)
+
+            # Add synthetic certificates for allowlisted users without GeneratedCertificate
+            for entry in allowlist_qs:
+                if entry.user_id not in existing_cert_user_ids:
+                    cert_dict = self._create_certificate_dict_for_allowlisted_user(entry, enrollment_dict)
+                    certificate_data.append(cert_dict)
+
+            # Sort by username
+            certificate_data.sort(key=lambda x: x['username'])
+
+            # Paginate manually
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(certificate_data, request)
+
+            return paginator.get_paginated_response(page if page is not None else certificate_data)
+
+        elif filter_type == "invalidated":
+            course_id = self.kwargs["course_id"]
+            course_key = CourseKey.from_string(course_id)
+            search = request.query_params.get("search", "").strip()
+
+            # Get enrollment data for context
+            enrollments = CourseEnrollment.objects.filter(
+                course_id=course_key
+            ).select_related('user')
+            enrollment_dict = {e.user_id: e.mode for e in enrollments}
+
+            # Get all invalidations
+            invalidations_qs = CertificateInvalidation.objects.filter(
+                generated_certificate__course_id=course_key,
+                active=True
+            ).select_related('generated_certificate__user', 'invalidated_by')
+
+            # Apply search filter
+            if search:
+                invalidations_qs = invalidations_qs.filter(
+                    Q(generated_certificate__user__username__icontains=search) |
+                    Q(generated_certificate__user__email__icontains=search)
+                )
+
+            # Get existing certificates for invalidated users
+            invalidated_cert_ids = list(invalidations_qs.values_list('generated_certificate_id', flat=True))
+            existing_certs = GeneratedCertificate.objects.filter(
+                id__in=invalidated_cert_ids
+            ).select_related('user')
+
+            # Build list of certificate data using existing certificates
+            certificate_data = []
+            context = self.get_serializer_context()
+            for cert in existing_certs:
+                serializer = self.get_serializer(cert, context=context)
+                certificate_data.append(serializer.data)
+
+            # Sort by username
+            certificate_data.sort(key=lambda x: x['username'])
+
+            # Paginate manually
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(certificate_data, request)
+
+            return paginator.get_paginated_response(page if page is not None else certificate_data)
+
+        # For other filters, use default behavior
+        return super().list(request, *args, **kwargs)
+
     def _apply_certificate_status_filter(self, certificates, filter_type, cert_statuses, course_key):
         """Apply status-based filters to certificate queryset."""
         if filter_type == "received":
@@ -1346,6 +1509,26 @@ class IssuedCertificatesView(ListAPIView):
         filter_type = self.request.query_params.get("filter", "all")
         search = self.request.query_params.get("search", "").strip()
 
+        # Special handling for granted_exceptions: show all allowlisted users
+        if filter_type == "granted_exceptions":
+            allowlist_user_ids = CertificateAllowlist.objects.filter(
+                course_id=course_key, allowlist=True
+            ).values_list('user_id', flat=True)
+
+            # Get all certificates for allowlisted users
+            certificates = GeneratedCertificate.objects.filter(
+                course_id=course_key,
+                user_id__in=allowlist_user_ids
+            ).select_related('user', 'user__profile')
+
+            # Apply search filter if provided
+            if search:
+                certificates = certificates.filter(
+                    Q(user__username__icontains=search) | Q(user__email__icontains=search)
+                )
+
+            return certificates.order_by('user__username')
+
         # Get certificates for the course
         if filter_type in ['audit_passing', 'audit_not_passing', 'all']:
             certificates = GeneratedCertificate.objects.filter(
@@ -1368,7 +1551,7 @@ class IssuedCertificatesView(ListAPIView):
             course_key, filter_type
         )
 
-        # Apply filter based on filter type (includes granted_exceptions and invalidated)
+        # Apply filter based on filter type (includes invalidated)
         certificates = self._apply_certificate_status_filter(
             certificates, filter_type, CertificateStatuses, course_key
         )

@@ -2091,6 +2091,57 @@ class IssuedCertificatesViewTest(SharedModuleStoreTestCase):
         assert 'previous' in response.data
         assert 'results' in response.data
 
+    def test_granted_exceptions_without_certificates(self):
+        """
+        Test that granted_exceptions filter shows allowlisted users
+        even if they don't have GeneratedCertificate records yet.
+        """
+        # Add student1 to allowlist (has verified enrollment)
+        CertificateAllowlist.objects.create(
+            user=self.student1,
+            course_id=self.course_key,
+            allowlist=True,
+            notes='Medical emergency'
+        )
+
+        # Add student2 to allowlist (has audit enrollment, no certificate)
+        CertificateAllowlist.objects.create(
+            user=self.student2,
+            course_id=self.course_key,
+            allowlist=True,
+            notes='Special case'
+        )
+
+        # Create certificate only for student1
+        GeneratedCertificateFactory.create(
+            user=self.student1,
+            course_id=self.course_key,
+            status=CertificateStatuses.downloadable
+        )
+
+        self.client.force_authenticate(user=self.instructor)
+        params = {'filter': 'granted_exceptions'}
+        response = self.client.get(self._get_url(), params)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 2  # Both students should appear
+
+        results = {r['username']: r for r in response.data['results']}
+
+        # Verify student1 (has certificate)
+        assert 'student1' in results
+        assert results['student1']['enrollment_track'] == 'verified'
+        assert results['student1']['certificate_status'] == 'downloadable'
+        assert results['student1']['special_case'] == 'Exception'
+        assert results['student1']['exception_notes'] == 'Medical emergency'
+
+        # Verify student2 (no certificate, but should appear with enrollment data)
+        assert 'student2' in results
+        assert results['student2']['enrollment_track'] == 'audit'
+        assert results['student2']['certificate_status'] == 'audit_notpassing'
+        assert results['student2']['special_case'] == 'Exception'
+        assert results['student2']['exception_notes'] == 'Special case'
+
 
 @ddt.ddt
 class CertificateGenerationHistoryViewTest(SharedModuleStoreTestCase):
