@@ -731,6 +731,7 @@ class CertificateExceptionSerializer(serializers.Serializer):
     learners = serializers.ListField(
         child=serializers.CharField(max_length=255, allow_blank=False),
         allow_empty=False,
+        max_length=1000,
         help_text="List of usernames or email addresses of learners to grant exceptions"
     )
     notes = serializers.CharField(
@@ -749,6 +750,7 @@ class CertificateInvalidationSerializer(serializers.Serializer):
     learners = serializers.ListField(
         child=serializers.CharField(max_length=255, allow_blank=False),
         allow_empty=False,
+        max_length=1000,
         help_text="List of usernames or email addresses of learners to invalidate certificates"
     )
     notes = serializers.CharField(

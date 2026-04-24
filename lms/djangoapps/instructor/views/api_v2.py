@@ -1705,6 +1705,10 @@ class CertificateExceptionsView(DeveloperErrorViewMixin, APIView):
         for learner, user in exceptions_to_create:
             try:
                 certs_api.create_or_update_certificate_allowlist_entry(user, course_key, notes)
+                log.info(
+                    "Certificate exception granted for user %s (%s) in course %s by %s",
+                    user.id, learner, course_key, request.user.username
+                )
                 results['success'].append(learner)
             except Exception as exc:  # pylint: disable=broad-except
                 log.exception(
@@ -2005,7 +2009,21 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                     )
                     # Invalidate the certificate with explicit source for auditability
                     certificate.invalidate(source='instructor_api_v2')
+                    log.info(
+                        "Certificate invalidated for user %s (%s) in course %s by %s",
+                        certificate.user_id, learner, course_key, request.user.username
+                    )
                     results['success'].append(learner)
+            except AlreadyRunningError:
+                log.warning(
+                    "Certificate generation already running for user %s in course %s",
+                    certificate.user_id, course_key
+                )
+                results['errors'].append({
+                    'learner': learner,
+                    'message': _('Cannot invalidate certificate while certificate generation is in progress. '
+                                 'Please wait for it to complete.')
+                })
             except Exception as exc:  # pylint: disable=broad-except
                 log.exception(
                     "Error invalidating certificate for user %s in course %s",
