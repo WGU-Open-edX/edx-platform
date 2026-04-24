@@ -1287,27 +1287,6 @@ class IssuedCertificatesView(ListAPIView):
             'invalidation_note': '',
         }
 
-    def _create_certificate_dict_for_invalidated_user(self, invalidation, enrollment_dict):
-        """
-        Create a dictionary representing certificate data for an invalidated certificate
-        that may not have a GeneratedCertificate record.
-        """
-        user = invalidation.generated_certificate.user if invalidation.generated_certificate else None
-        enrollment_mode = enrollment_dict.get(user.id, '') if user else ''
-
-        return {
-            'username': user.username if user else '',
-            'email': user.email if user else '',
-            'enrollment_track': enrollment_mode,
-            'certificate_status': 'unavailable',
-            'special_case': 'Invalidation',
-            'exception_granted': None,
-            'exception_notes': '',
-            'invalidated_by': invalidation.invalidated_by.email if invalidation.invalidated_by else '',
-            'invalidation_date': invalidation.created.isoformat(),
-            'invalidation_note': invalidation.notes or '',
-        }
-
     def list(self, request, *args, **kwargs):
         """
         Override list to handle granted_exceptions and invalidated filters specially.
@@ -1435,18 +1414,6 @@ class IssuedCertificatesView(ListAPIView):
             return certificates.filter(status=cert_statuses.audit_notpassing)
         elif filter_type == "error":
             return certificates.filter(status=cert_statuses.error)
-        elif filter_type == "granted_exceptions":
-            return certificates.filter(
-                user_id__in=CertificateAllowlist.objects.filter(
-                    course_id=course_key, allowlist=True
-                ).values_list('user_id', flat=True)
-            )
-        elif filter_type == "invalidated":
-            return certificates.filter(
-                user_id__in=CertificateInvalidation.objects.filter(
-                    generated_certificate__course_id=course_key, active=True
-                ).values_list('generated_certificate__user_id', flat=True)
-            )
         return certificates
 
     def get_serializer_context(self):
@@ -1508,26 +1475,6 @@ class IssuedCertificatesView(ListAPIView):
         # Get query parameters
         filter_type = self.request.query_params.get("filter", "all")
         search = self.request.query_params.get("search", "").strip()
-
-        # Special handling for granted_exceptions: show all allowlisted users
-        if filter_type == "granted_exceptions":
-            allowlist_user_ids = CertificateAllowlist.objects.filter(
-                course_id=course_key, allowlist=True
-            ).values_list('user_id', flat=True)
-
-            # Get all certificates for allowlisted users
-            certificates = GeneratedCertificate.objects.filter(
-                course_id=course_key,
-                user_id__in=allowlist_user_ids
-            ).select_related('user', 'user__profile')
-
-            # Apply search filter if provided
-            if search:
-                certificates = certificates.filter(
-                    Q(user__username__icontains=search) | Q(user__email__icontains=search)
-                )
-
-            return certificates.order_by('user__username')
 
         # Get certificates for the course
         if filter_type in ['audit_passing', 'audit_not_passing', 'all']:
@@ -1989,7 +1936,7 @@ def _resolve_learners_to_users(learners):
         try:
             user = get_user_by_username_or_email(learner)
             learner_to_user[learner] = user
-        except User.DoesNotExist as exc:
+        except (User.DoesNotExist, User.MultipleObjectsReturned) as exc:
             errors.append({
                 'learner': learner,
                 'message': str(exc)
@@ -2288,21 +2235,21 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
                         status=status.HTTP_404_NOT_FOUND
                     )
 
-                # Trigger certificate regeneration for this student
-                log.info(
-                    "Re-validating certificate for student %s in course %s - triggering regeneration",
-                    user.id, course_key
+            # Trigger certificate regeneration after transaction commits
+            log.info(
+                "Re-validating certificate for student %s in course %s - triggering regeneration",
+                user.id, course_key
+            )
+            try:
+                task_api.generate_certificates_for_students(
+                    request, course_key, student_set="specific_student", specific_student_id=user.id
                 )
-                try:
-                    task_api.generate_certificates_for_students(
-                        request, course_key, student_set="specific_student", specific_student_id=user.id
-                    )
-                except Exception as cert_gen_error:  # pylint: disable=broad-except
-                    # Log but don't fail - the invalidation was already removed
-                    log.warning(
-                        "Certificate regeneration failed for student %s in course %s: %s",
-                        user.id, course_key, str(cert_gen_error)
-                    )
+            except Exception as cert_gen_error:  # pylint: disable=broad-except
+                # Log but don't fail - the invalidation was already removed
+                log.warning(
+                    "Certificate regeneration failed for student %s in course %s: %s",
+                    user.id, course_key, str(cert_gen_error)
+                )
 
             return Response(
                 {'message': _('Certificate invalidation removed successfully')},
@@ -2312,7 +2259,7 @@ class CertificateInvalidationsView(DeveloperErrorViewMixin, APIView):
         except Exception as exc:  # pylint: disable=broad-except
             log.exception("Error removing certificate invalidation for course %s: %s", course_id, str(exc))
             return Response(
-                {'message': _('Unable to remove certificate invalidation: {}').format(str(exc))},
+                {'message': _('Unable to remove certificate invalidation')},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
