@@ -4391,9 +4391,13 @@ def _sort_in_memory(items, ordering):
             else:
                 value = None
                 break
+        # Return a type-consistent default so sorted() doesn't raise
+        # TypeError when comparing None with str/int/datetime values.
         if value is None:
             return ''
-        return value
+        if isinstance(value, bool):
+            return int(value)
+        return str(value)
 
     return sorted(items, key=sort_key, reverse=descending)
 

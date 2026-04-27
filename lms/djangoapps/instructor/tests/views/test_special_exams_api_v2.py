@@ -553,6 +553,7 @@ class CourseAllowancesViewTest(ModuleStoreTestCase):
 
     @ddt.data('username', 'email', 'exam_name', 'allowance_type', 'value')
     def test_sort_allowances(self, ordering):
+        """Verify all ordering fields are accepted and reverse correctly."""
         student2 = UserFactory(username='alice', email='alice@example.com')
         exam_id_2 = create_exam(
             course_id=self.course_id,
@@ -563,9 +564,15 @@ class CourseAllowancesViewTest(ModuleStoreTestCase):
         )
         add_allowance_for_user(self.exam_id, self.student.username, 'additional_time_granted', '30')
         add_allowance_for_user(exam_id_2, student2.username, 'review_policy_exception', '60')
-        response = self.client.get(self._url(), {'ordering': ordering})
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.json()['results']) == 2
+        asc_response = self.client.get(self._url(), {'ordering': ordering})
+        desc_response = self.client.get(self._url(), {'ordering': f'-{ordering}'})
+        assert asc_response.status_code == status.HTTP_200_OK
+        asc_results = asc_response.json()['results']
+        desc_results = desc_response.json()['results']
+        assert len(asc_results) == 2
+        # All allowance fields differ between the two records, so order must reverse
+        assert asc_results[0] == desc_results[1]
+        assert asc_results[1] == desc_results[0]
 
     def test_sort_allowances_descending(self):
         student2 = UserFactory(username='alice', email='alice@example.com')
@@ -627,6 +634,7 @@ class CourseExamAttemptsViewTest(ModuleStoreTestCase):
 
     @ddt.data('username', 'exam_name', 'time_limit', 'type', 'started_at', 'completed_at', 'status')
     def test_sort_attempts(self, ordering):
+        """Verify all ordering fields are accepted and return correct results."""
         student2 = UserFactory(username='student2', email='student2@example.com')
         exam_id_2 = create_exam(
             course_id=self.course_id,
@@ -637,9 +645,11 @@ class CourseExamAttemptsViewTest(ModuleStoreTestCase):
         )
         create_exam_attempt(self.exam_id, self.student.id)
         create_exam_attempt(exam_id_2, student2.id)
-        response = self.client.get(self._url(), {'ordering': ordering})
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.json()['results']) == 2
+        # Verify ascending and descending both succeed
+        for prefix in ('', '-'):
+            response = self.client.get(self._url(), {'ordering': f'{prefix}{ordering}'})
+            assert response.status_code == status.HTTP_200_OK
+            assert len(response.json()['results']) == 2
 
     def test_sort_attempts_descending(self):
         student2 = UserFactory(username='student2', email='student2@example.com')
