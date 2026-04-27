@@ -530,7 +530,7 @@ class BlockDueDateSerializerV2(serializers.Serializer):
         block_id (str): The ID related to the block that needs the due date update.
         due_datetime (str): The new due date and time for the block.
         email_or_username (str): The email or username of the student whose access is being modified.
-        reason (str): Reason why updating this.
+        reason (str, optional): Reason why updating this.
     """
     block_id = serializers.CharField()
     due_datetime = serializers.CharField()
@@ -538,7 +538,7 @@ class BlockDueDateSerializerV2(serializers.Serializer):
         max_length=255,
         help_text="Email or username of user to change access"
     )
-    reason = serializers.CharField(required=False)
+    reason = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate_email_or_username(self, value):
         """
