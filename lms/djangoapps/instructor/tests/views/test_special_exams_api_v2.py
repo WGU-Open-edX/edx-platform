@@ -215,6 +215,7 @@ class SpecialExamResetViewTest(ModuleStoreTestCase):
 
 @override_settings(**PROCTORING_SETTINGS)
 @patch.dict(settings.FEATURES, {'ENABLE_SPECIAL_EXAMS': True})
+@ddt.ddt
 class SpecialExamAttemptsViewTest(ModuleStoreTestCase):
     """Tests for GET /api/instructor/v2/courses/{course_key}/special_exams/{exam_id}/attempts"""
 
@@ -226,46 +227,52 @@ class SpecialExamAttemptsViewTest(ModuleStoreTestCase):
         self.student = UserFactory(username='student1', email='student1@example.com')
         self.client.force_authenticate(user=self.instructor)
         self.course_id = str(self.course.id)
-        self.exam_id = create_exam(
+
+    def _create_exam(self, is_proctored=False, is_practice_exam=False, content_suffix='exam1'):
+        return create_exam(
             course_id=self.course_id,
-            content_id='block-v1:test+test+test+type@sequential+block@exam1',
-            exam_name='Midterm Exam',
+            content_id=f'block-v1:test+test+test+type@sequential+block@{content_suffix}',
+            exam_name='Test Exam',
             time_limit_mins=60,
-            is_proctored=False,
+            is_proctored=is_proctored,
+            is_practice_exam=is_practice_exam,
         )
 
-    def _url(self, exam_id=None):
+    def _url(self, exam_id):
         return reverse('instructor_api_v2:special_exam_attempts', kwargs={
             'course_id': self.course_id,
-            'exam_id': exam_id or self.exam_id,
+            'exam_id': exam_id,
         })
 
-    def test_list_attempts(self):
-        create_exam_attempt(self.exam_id, self.student.id)
-        response = self.client.get(self._url())
+    @ddt.data(
+        (False, False, 'timed'),
+        (True, False, 'proctored'),
+        (True, True, 'practice'),
+    )
+    @ddt.unpack
+    def test_attempt_exam_type(self, is_proctored, is_practice_exam, expected_type):
+        exam_id = self._create_exam(is_proctored=is_proctored, is_practice_exam=is_practice_exam)
+        create_exam_attempt(exam_id, self.student.id)
+        response = self.client.get(self._url(exam_id))
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data['count'] == 1
-        assert data['results'][0]['exam_id'] == self.exam_id
+        assert data['results'][0]['exam_id'] == exam_id
+        assert data['results'][0]['exam_type'] == expected_type
         assert data['results'][0]['user']['username'] == 'student1'
 
     def test_list_attempts_filters_by_exam(self):
         """Only attempts for the requested exam_id are returned."""
-        other_exam_id = create_exam(
-            course_id=self.course_id,
-            content_id='block-v1:test+test+test+type@sequential+block@exam2',
-            exam_name='Final Exam',
-            time_limit_mins=120,
-            is_proctored=False,
-        )
-        create_exam_attempt(self.exam_id, self.student.id)
+        exam_id = self._create_exam(content_suffix='exam1')
+        other_exam_id = self._create_exam(content_suffix='exam2')
+        create_exam_attempt(exam_id, self.student.id)
         other_student = UserFactory(username='student2')
         create_exam_attempt(other_exam_id, other_student.id)
 
-        response = self.client.get(self._url())
+        response = self.client.get(self._url(exam_id))
         data = response.json()
         assert data['count'] == 1
-        assert data['results'][0]['exam_id'] == self.exam_id
+        assert data['results'][0]['exam_id'] == exam_id
 
 
 @override_settings(**PROCTORING_SETTINGS)

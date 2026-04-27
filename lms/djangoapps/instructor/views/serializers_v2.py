@@ -1194,10 +1194,20 @@ class ExamAttemptSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     user = ExamAttemptUserSerializer()
     exam_id = serializers.IntegerField(source='proctored_exam.id')
+    exam_type = serializers.SerializerMethodField()
     status = serializers.CharField()
     start_time = serializers.DateTimeField(source='started_at', allow_null=True, required=False)
     end_time = serializers.DateTimeField(source='completed_at', allow_null=True, required=False)
     allowed_time_limit_mins = serializers.IntegerField(allow_null=True, required=False)
+
+    def get_exam_type(self, obj):
+        """Derive exam type from proctored_exam flags."""
+        exam = obj.get('proctored_exam', {})
+        if exam.get('is_practice_exam'):
+            return 'practice'
+        if exam.get('is_proctored'):
+            return 'proctored'
+        return 'timed'
 
 
 class ProctoringSettingsSerializer(serializers.Serializer):
