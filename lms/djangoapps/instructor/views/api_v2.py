@@ -4391,13 +4391,11 @@ def _sort_in_memory(items, ordering):
             else:
                 value = None
                 break
-        # Return a type-consistent default so sorted() doesn't raise
-        # TypeError when comparing None with str/int/datetime values.
+        # Return a tuple (is_none, value) so None values sort last
+        # and non-None values compare naturally within their type.
         if value is None:
-            return ''
-        if isinstance(value, bool):
-            return int(value)
-        return str(value)
+            return (1, '')
+        return (0, value)
 
     return sorted(items, key=sort_key, reverse=descending)
 
@@ -4412,6 +4410,14 @@ class CourseAllowancesView(DeveloperErrorViewMixin, ListAPIView):
         GET /api/instructor/v2/courses/{course_id}/special_exams/allowances?search=student1
         GET /api/instructor/v2/courses/{course_id}/special_exams/allowances?ordering=-value
         POST /api/instructor/v2/courses/{course_id}/special_exams/allowances
+
+    **Query Parameters**
+
+        search (optional): Filter by username or email.
+        ordering (optional): Sort by field. Prefix with '-' for descending.
+            Valid values: username, email, exam_name, allowance_type, value.
+        page (optional): Page number for pagination.
+        page_size (optional): Number of results per page.
     """
 
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
@@ -4481,6 +4487,14 @@ class CourseExamAttemptsView(DeveloperErrorViewMixin, ListAPIView):
         GET /api/instructor/v2/courses/{course_id}/special_exams/attempts?search=student1
         GET /api/instructor/v2/courses/{course_id}/special_exams/attempts?ordering=-started_at
         GET /api/instructor/v2/courses/{course_id}/special_exams/attempts?page=2&page_size=50
+
+    **Query Parameters**
+
+        search (optional): Filter by username or email.
+        ordering (optional): Sort by field. Prefix with '-' for descending.
+            Valid values: username, exam_name, time_limit, type, started_at, completed_at, status.
+        page (optional): Page number for pagination.
+        page_size (optional): Number of results per page.
     """
 
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
@@ -4491,11 +4505,19 @@ class CourseExamAttemptsView(DeveloperErrorViewMixin, ListAPIView):
         'username': 'user.username',
         'exam_name': 'proctored_exam.exam_name',
         'time_limit': 'proctored_exam.time_limit_mins',
-        'type': 'proctored_exam.is_proctored',
         'started_at': 'started_at',
         'completed_at': 'completed_at',
         'status': 'status',
     }
+
+    def _get_exam_type(self, attempt):
+        """Derive exam type string for sorting purposes."""
+        exam = attempt.get('proctored_exam', {})
+        if exam.get('is_practice_exam'):
+            return 'practice'
+        if exam.get('is_proctored'):
+            return 'proctored'
+        return 'timed'
 
     def get_queryset(self):
         course_id = self.kwargs['course_id']
@@ -4506,7 +4528,10 @@ class CourseExamAttemptsView(DeveloperErrorViewMixin, ListAPIView):
             attempts = get_all_exam_attempts(course_id)
         ordering = self.request.query_params.get('ordering', '')
         field = ordering.lstrip('-')
-        if field in self.ORDERING_FIELDS:
+        if field == 'type':
+            descending = ordering.startswith('-')
+            attempts = sorted(attempts, key=self._get_exam_type, reverse=descending)
+        elif field in self.ORDERING_FIELDS:
             prefix = '-' if ordering.startswith('-') else ''
             attempts = _sort_in_memory(attempts, prefix + self.ORDERING_FIELDS[field])
         return attempts
