@@ -466,6 +466,7 @@ class ExamAllowanceViewTest(ModuleStoreTestCase):
 
 @override_settings(**PROCTORING_SETTINGS)
 @patch.dict(settings.FEATURES, {'ENABLE_SPECIAL_EXAMS': True})
+@ddt.ddt
 class CourseAllowancesViewTest(ModuleStoreTestCase):
     """Tests for GET /api/instructor/v2/courses/{course_key}/special_exams/allowances"""
 
@@ -550,9 +551,36 @@ class CourseAllowancesViewTest(ModuleStoreTestCase):
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    @ddt.data('username', 'email', 'exam_name', 'allowance_type', 'value')
+    def test_sort_allowances(self, ordering):
+        student2 = UserFactory(username='alice', email='alice@example.com')
+        exam_id_2 = create_exam(
+            course_id=self.course_id,
+            content_id='block-v1:test+test+test+type@sequential+block@exam2',
+            exam_name='AAA Exam',
+            time_limit_mins=30,
+            is_proctored=False,
+        )
+        add_allowance_for_user(self.exam_id, self.student.username, 'additional_time_granted', '30')
+        add_allowance_for_user(exam_id_2, student2.username, 'review_policy_exception', '60')
+        response = self.client.get(self._url(), {'ordering': ordering})
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()['results']) == 2
+
+    def test_sort_allowances_descending(self):
+        student2 = UserFactory(username='alice', email='alice@example.com')
+        add_allowance_for_user(self.exam_id, self.student.username, 'additional_time_granted', '30')
+        add_allowance_for_user(self.exam_id, student2.username, 'additional_time_granted', '60')
+        response = self.client.get(self._url(), {'ordering': '-username'})
+        assert response.status_code == status.HTTP_200_OK
+        results = response.json()['results']
+        assert results[0]['user']['username'] == 'student1'
+        assert results[1]['user']['username'] == 'alice'
+
 
 @override_settings(**PROCTORING_SETTINGS)
 @patch.dict(settings.FEATURES, {'ENABLE_SPECIAL_EXAMS': True})
+@ddt.ddt
 class CourseExamAttemptsViewTest(ModuleStoreTestCase):
     """Tests for GET /api/instructor/v2/courses/{course_key}/special_exams/attempts"""
 
@@ -596,3 +624,29 @@ class CourseExamAttemptsViewTest(ModuleStoreTestCase):
         response = self.client.get(self._url(), {'search': 'nonexistent'})
         assert response.status_code == status.HTTP_200_OK
         assert response.json()['count'] == 0
+
+    @ddt.data('username', 'exam_name', 'time_limit', 'type', 'started_at', 'completed_at', 'status')
+    def test_sort_attempts(self, ordering):
+        student2 = UserFactory(username='student2', email='student2@example.com')
+        exam_id_2 = create_exam(
+            course_id=self.course_id,
+            content_id='block-v1:test+test+test+type@sequential+block@exam2',
+            exam_name='Final Exam',
+            time_limit_mins=120,
+            is_proctored=True,
+        )
+        create_exam_attempt(self.exam_id, self.student.id)
+        create_exam_attempt(exam_id_2, student2.id)
+        response = self.client.get(self._url(), {'ordering': ordering})
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()['results']) == 2
+
+    def test_sort_attempts_descending(self):
+        student2 = UserFactory(username='student2', email='student2@example.com')
+        create_exam_attempt(self.exam_id, self.student.id)
+        create_exam_attempt(self.exam_id, student2.id)
+        response = self.client.get(self._url(), {'ordering': '-username'})
+        assert response.status_code == status.HTTP_200_OK
+        results = response.json()['results']
+        assert results[0]['user']['username'] == 'student2'
+        assert results[1]['user']['username'] == 'student1'
