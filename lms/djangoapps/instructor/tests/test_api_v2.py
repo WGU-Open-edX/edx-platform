@@ -217,12 +217,12 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
         self.client.force_authenticate(user=self.staff)
         response = self.client.get(self._get_url())
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)  # noqa: PT009
+        assert response.status_code == status.HTTP_200_OK
         data = response.data
-        self.assertEqual(data['course_id'], str(self.course_key))  # noqa: PT009
-        self.assertIn('permissions', data)  # noqa: PT009
+        assert data['course_id'] == str(self.course_key)
+        assert 'permissions' in data
         # Staff should have staff permission
-        self.assertTrue(data['permissions']['staff'])  # noqa: PT009
+        assert data['permissions']['staff'] is True
         assert data['username'] == self.staff.username
 
     def test_get_course_metadata_unauthorized(self):
