@@ -51,6 +51,7 @@ class CourseInformationSerializerV2(serializers.Serializer):
     enrollment statistics, permissions, and dashboard configuration.
     """
     course_id = serializers.SerializerMethodField(help_text="Course run key")
+    username = serializers.SerializerMethodField(help_text="Username of the current authenticated user")
     display_name = serializers.SerializerMethodField(help_text="Course display name")
     org = serializers.SerializerMethodField(help_text="Organization identifier")
     course_number = serializers.SerializerMethodField(help_text="Course number")
@@ -327,6 +328,10 @@ class CourseInformationSerializerV2(serializers.Serializer):
     def get_course_id(self, data):
         """Get course ID as string."""
         return str(data['course'].id)
+
+    def get_username(self, data):
+        """Get the username of the current authenticated user."""
+        return data['user'].username
 
     def get_display_name(self, data):
         """Get course display name."""

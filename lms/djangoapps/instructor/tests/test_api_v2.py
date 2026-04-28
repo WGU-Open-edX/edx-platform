@@ -177,6 +177,9 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
         assert 'studio_grading_url' in data
         assert 'admin_console_url' in data
 
+        # Verify current user's username is returned
+        assert data['username'] == self.instructor.username
+
         assert data['studio_grading_url'] == f'http://localhost:2001/authoring/course/{self.course.id}/settings/grading'
         assert data['admin_console_url'] == 'http://localhost:2025/admin-console/authz'
 
@@ -220,6 +223,7 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
         self.assertIn('permissions', data)  # noqa: PT009
         # Staff should have staff permission
         self.assertTrue(data['permissions']['staff'])  # noqa: PT009
+        assert data['username'] == self.staff.username
 
     def test_get_course_metadata_unauthorized(self):
         """
