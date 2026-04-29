@@ -1179,12 +1179,20 @@ class SpecialExamSerializer(serializers.Serializer):
     exam_name = serializers.CharField()
     time_limit_mins = serializers.IntegerField()
     due_date = serializers.DateTimeField(allow_null=True, required=False)
-    exam_type = serializers.CharField(required=False, default='')
+    exam_type = serializers.SerializerMethodField()
     is_proctored = serializers.BooleanField()
     is_practice_exam = serializers.BooleanField()
     is_active = serializers.BooleanField()
     hide_after_due = serializers.BooleanField()
     backend = serializers.CharField(allow_null=True, required=False)
+
+    def get_exam_type(self, obj):
+        """Derive exam type from proctoring flags."""
+        if obj.get('is_practice_exam'):
+            return 'practice'
+        if obj.get('is_proctored'):
+            return 'proctored'
+        return 'timed'
 
 
 class ExamAttemptUserSerializer(serializers.Serializer):

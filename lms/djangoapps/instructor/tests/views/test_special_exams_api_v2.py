@@ -84,18 +84,21 @@ class SpecialExamsListViewTest(ModuleStoreTestCase):
         assert timed['is_practice_exam'] is False
         assert timed['is_active'] is True
         assert timed['hide_after_due'] is False
+        assert timed['exam_type'] == 'timed'
 
         proctored = exams_by_name['Proctored Exam']
         assert proctored['id'] == self.proctored_exam_id
         assert proctored['time_limit_mins'] == 90
         assert proctored['is_proctored'] is True
         assert proctored['is_practice_exam'] is False
+        assert proctored['exam_type'] == 'proctored'
 
         practice = exams_by_name['Practice Exam']
         assert practice['id'] == self.practice_exam_id
         assert practice['time_limit_mins'] == 30
         assert practice['is_proctored'] is True
         assert practice['is_practice_exam'] is True
+        assert practice['exam_type'] == 'practice'
 
     def test_unauthenticated(self):
         self.client.force_authenticate(user=None)
