@@ -38,6 +38,7 @@ from common.djangoapps.student.tests.factories import StaffFactory, UserFactory
 from openedx.core.djangoapps.authz.tests.mixins import CourseAuthzTestMixin
 from openedx.core.djangoapps.content_libraries.api import AccessLevel, create_library, set_library_user_permissions
 from openedx.core.djangoapps.content_tagging import api as tagging_api
+from openedx.core.djangoapps.content_tagging.api import set_taxonomy_orgs
 from openedx.core.djangoapps.content_tagging.models import TaxonomyOrg
 from openedx.core.djangolib.testing.utils import skip_unless_cms
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
@@ -2163,21 +2164,11 @@ class TestObjectTagOrgViewWithAuthz(CourseAuthzTestMixin, SharedModuleStoreTestC
             name="Test Taxonomy",
             description="Test taxonomy for authz",
         )
-        TaxonomyOrg.objects.create(
-            taxonomy=self.taxonomy,
-            org=None,  # Global taxonomy not tied to any org
-            rel_type=TaxonomyOrg.RelType.OWNER,
-        )
+        set_taxonomy_orgs(self.taxonomy, all_orgs=True)
 
         # Create tags
-        self.tag1 = Tag.objects.create(
-            taxonomy=self.taxonomy,
-            value="Tag 1",
-        )
-        self.tag2 = Tag.objects.create(
-            taxonomy=self.taxonomy,
-            value="Tag 2",
-        )
+        self.tag1 = self.taxonomy.add_tag("Tag 1")
+        self.tag2 = self.taxonomy.add_tag("Tag 2")
 
         # Create auditor user with view-only permissions
         self.auditor_user = UserFactory(password=self.password)
@@ -2313,12 +2304,8 @@ class TestObjectTagOrgViewWithAuthz(CourseAuthzTestMixin, SharedModuleStoreTestC
             name="Org Taxonomy",
             description="Taxonomy scoped to course org",
         )
-        TaxonomyOrg.objects.create(
-            taxonomy=org_taxonomy,
-            org=course_org,
-            rel_type=TaxonomyOrg.RelType.OWNER,
-        )
-        Tag.objects.create(taxonomy=org_taxonomy, value="OrgTag")
+        set_taxonomy_orgs(org_taxonomy, orgs=[course_org])
+        org_taxonomy.add_tag("OrgTag")
 
         # Admin tags the course with the org-scoped taxonomy
         tagging_api.tag_object(
