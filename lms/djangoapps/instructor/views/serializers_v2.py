@@ -465,7 +465,7 @@ class CourseInformationSerializerV2(serializers.Serializer):
         )
         if not is_writable_gradebook_enabled(course_key) or not mfe_base_url:
             return None
-        return f'{settings.WRITABLE_GRADEBOOK_URL}/{course_key}'
+        return f'{mfe_base_url}/{course_key}'
 
     def get_studio_grading_url(self, data):
         """Get Studio MFE grading settings URL for the course."""
