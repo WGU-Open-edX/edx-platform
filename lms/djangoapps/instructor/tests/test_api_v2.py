@@ -121,6 +121,7 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
 
     @override_settings(COURSE_AUTHORING_MICROFRONTEND_URL='http://localhost:2001/authoring')
     @override_settings(ADMIN_CONSOLE_MICROFRONTEND_URL='http://localhost:2025/admin-console')
+    @override_settings(WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook')
     def test_get_course_metadata_as_instructor(self):
         """
         Test that an instructor can retrieve comprehensive course metadata.
@@ -176,9 +177,11 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
         assert 'analytics_dashboard_message' in data
         assert 'studio_grading_url' in data
         assert 'admin_console_url' in data
+        assert 'gradebook_url' in data
 
         assert data['studio_grading_url'] == f'http://localhost:2001/authoring/course/{self.course.id}/settings/grading'
         assert data['admin_console_url'] == 'http://localhost:2025/admin-console/authz'
+        assert data['gradebook_url'] == f'http://localhost:1994/gradebook/{self.course.id}'
 
     @override_settings(ADMIN_CONSOLE_MICROFRONTEND_URL='http://localhost:2025/admin-console')
     def test_admin_console_url_requires_instructor_access(self):
