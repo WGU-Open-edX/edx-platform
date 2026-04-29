@@ -64,10 +64,15 @@ class ObjectTagTaxonomyOrgFilterBackend(BaseFilterBackend):
     """
 
     def filter_queryset(self, request, queryset, view):
-        # Authz path
+        # Authz path: filter by course org only.
+        # The legacy validation layer (check_taxonomy_context_key_org in rules.py) enforces
+        # that tags can only be applied to a course from global taxonomies or taxonomies
+        # owned by the course's org. This is narrower than the legacy filter path below,
+        # which filters by all the user's orgs, but it matches the actual enforcement —
+        # a user can never apply an OrgA taxonomy to an OrgB course regardless of their
+        # permissions.
         should_use_authz, course_key = getattr(view, '_authz_check', (False, None))
         if should_use_authz and course_key:
-            # Only return tags from global taxonomies + the course's org taxonomies.
             course_orgs = rules_cache.get_orgs([course_key.org]) if course_key.org else []
             return queryset.filter(taxonomy__enabled=True).filter(
                 Exists(
@@ -77,7 +82,11 @@ class ObjectTagTaxonomyOrgFilterBackend(BaseFilterBackend):
                 )
             ).prefetch_related('taxonomy__taxonomyorg_set')
 
-        # Legacy path
+        # Legacy path: filter by all the user's orgs.
+        # This is broader than necessary for this endpoint (see authz path comment above).
+        # Users may see taxonomies from orgs unrelated to the current course — those
+        # taxonomies can't have tags applied here (blocked by check_taxonomy_context_key_org),
+        # but they still appear in the response with can_tag_object=false.
         if oel_tagging.is_taxonomy_admin(request.user):
             return queryset.prefetch_related('taxonomy__taxonomyorg_set')
 

@@ -49,7 +49,9 @@ def should_use_course_authz_for_object(object_id) -> tuple[bool, CourseKey | Non
 
     This intentionally scopes to course objects only. For non-course objects
     (e.g. content libraries), this returns (False, None), and callers are
-    expected to fall back to legacy django-rules permissions.
+    expected to fall back to legacy django-rules permissions, which handle
+    library authz checks separately (see can_change_object_tag_objectid
+    in rules.py).
 
     Returns (should_use_authz, course_key) where:
     - should_use_authz: True if authz should be used, False otherwise
