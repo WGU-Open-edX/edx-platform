@@ -4426,9 +4426,13 @@ class CourseAllowancesView(DeveloperErrorViewMixin, ListAPIView):
 
     ORDERING_FIELDS = {
         'username': 'user.username',
+        'user.username': 'user.username',
         'email': 'user.email',
+        'user.email': 'user.email',
         'exam_name': 'proctored_exam.exam_name',
+        'proctored_exam.exam_name': 'proctored_exam.exam_name',
         'allowance_type': 'key',
+        'key': 'key',
         'value': 'value',
     }
 
@@ -4503,8 +4507,13 @@ class CourseExamAttemptsView(DeveloperErrorViewMixin, ListAPIView):
 
     ORDERING_FIELDS = {
         'username': 'user.username',
+        'user.username': 'user.username',
+        'email': 'user.email',
+        'user.email': 'user.email',
         'exam_name': 'proctored_exam.exam_name',
+        'proctored_exam.exam_name': 'proctored_exam.exam_name',
         'time_limit': 'proctored_exam.time_limit_mins',
+        'proctored_exam.time_limit_mins': 'proctored_exam.time_limit_mins',
         'started_at': 'started_at',
         'completed_at': 'completed_at',
         'status': 'status',

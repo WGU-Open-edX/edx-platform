@@ -551,7 +551,17 @@ class CourseAllowancesViewTest(ModuleStoreTestCase):
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @ddt.data('username', 'email', 'exam_name', 'allowance_type', 'value')
+    @ddt.data(
+        'username',
+        'user.username',
+        'email',
+        'user.email',
+        'exam_name',
+        'proctored_exam.exam_name',
+        'allowance_type',
+        'key',
+        'value',
+    )
     def test_sort_allowances(self, ordering):
         """Verify all ordering fields are accepted and reverse correctly."""
         student2 = UserFactory(username='alice', email='alice@example.com')
@@ -632,7 +642,20 @@ class CourseExamAttemptsViewTest(ModuleStoreTestCase):
         assert response.status_code == status.HTTP_200_OK
         assert response.json()['count'] == 0
 
-    @ddt.data('username', 'exam_name', 'time_limit', 'type', 'started_at', 'completed_at', 'status')
+    @ddt.data(
+        'username',
+        'user.username',
+        'email',
+        'user.email',
+        'exam_name',
+        'proctored_exam.exam_name',
+        'time_limit',
+        'proctored_exam.time_limit_mins',
+        'type',
+        'started_at',
+        'completed_at',
+        'status',
+    )
     def test_sort_attempts(self, ordering):
         """Verify all ordering fields are accepted and return correct results."""
         student2 = UserFactory(username='student2', email='student2@example.com')
