@@ -124,13 +124,16 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
         ADMIN_CONSOLE_MICROFRONTEND_URL='http://localhost:2025/admin-console',
         WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook',
     )
-    @patch('lms.djangoapps.instructor.views.serializers_v2.is_writable_gradebook_enabled', return_value=True)
-    def test_get_course_metadata_as_instructor(self, _mock_is_writable_gradebook_enabled):
+    def test_get_course_metadata_as_instructor(self):
         """
         Test that an instructor can retrieve comprehensive course metadata.
         """
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.get(self._get_url())
+        with patch(
+            'lms.djangoapps.instructor.views.serializers_v2.is_writable_gradebook_enabled',
+            return_value=True,
+        ):
+            self.client.force_authenticate(user=self.instructor)
+            response = self.client.get(self._get_url())
 
         assert response.status_code == status.HTTP_200_OK
         data = response.data
