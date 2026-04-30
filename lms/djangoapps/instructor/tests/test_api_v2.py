@@ -123,7 +123,7 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
         COURSE_AUTHORING_MICROFRONTEND_URL='http://localhost:2001/authoring',
         ADMIN_CONSOLE_MICROFRONTEND_URL='http://localhost:2025/admin-console',
         # intentionally include trailing slash to test URL joining logic
-        WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook/', 
+        WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook/',
     )
     def test_get_course_metadata_as_instructor(self):
         """
