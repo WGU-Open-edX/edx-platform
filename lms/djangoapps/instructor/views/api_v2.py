@@ -4243,11 +4243,12 @@ def add_or_replace_allowance_for_user(exam_id, username_or_email, key, value):
     """
     user_id = get_user_by_username_or_email(username_or_email).id
 
-    for allowance in ProctoredExamStudentAllowance.get_allowances_for_user(exam_id, user_id):
-        if allowance.key != key:
-            remove_allowance_for_user(exam_id, user_id, allowance.key)
+    with transaction.atomic():
+        for allowance in ProctoredExamStudentAllowance.get_allowances_for_user(exam_id, user_id):
+            if allowance.key != key:
+                remove_allowance_for_user(exam_id, user_id, allowance.key)
 
-    add_allowance_for_user(exam_id, username_or_email, key, value)
+        add_allowance_for_user(exam_id, username_or_email, key, value)
 
 
 class ExamAllowanceView(DeveloperErrorViewMixin, APIView):
@@ -4315,7 +4316,7 @@ class ExamAllowanceView(DeveloperErrorViewMixin, APIView):
                     validated['value'],
                 )
                 results.append({'identifier': username_or_email, 'success': True})
-            except (ProctoredBaseException, User.DoesNotExist) as err:
+            except (ProctoredBaseException, User.DoesNotExist, User.MultipleObjectsReturned) as err:
                 results.append({'identifier': username_or_email, 'success': False, 'error': str(err)})
 
         return Response(
@@ -4497,8 +4498,15 @@ class CourseAllowancesView(DeveloperErrorViewMixin, ListAPIView):
                         validated['value'],
                     )
                     results.append({'identifier': username_or_email, 'exam_id': exam_id, 'success': True})
-                except (ProctoredBaseException, User.DoesNotExist) as err:
-                    results.append({'identifier': username_or_email, 'exam_id': exam_id, 'success': False, 'error': str(err)})
+                except (ProctoredBaseException, User.DoesNotExist, User.MultipleObjectsReturned) as err:
+                    results.append(
+                        {
+                            'identifier': username_or_email,
+                            'exam_id': exam_id,
+                            'success': False,
+                            'error': str(err)
+                        }
+                    )
 
         return Response({
             'allowance_type': validated['allowance_type'],
