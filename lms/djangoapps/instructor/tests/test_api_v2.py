@@ -122,7 +122,7 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
     @override_settings(
         COURSE_AUTHORING_MICROFRONTEND_URL='http://localhost:2001/authoring',
         ADMIN_CONSOLE_MICROFRONTEND_URL='http://localhost:2025/admin-console',
-        WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook',
+        WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook/',  # intentionally missing trailing slash to test URL joining logic
     )
     def test_get_course_metadata_as_instructor(self):
         """

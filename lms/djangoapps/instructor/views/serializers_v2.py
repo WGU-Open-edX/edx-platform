@@ -465,7 +465,7 @@ class CourseInformationSerializerV2(serializers.Serializer):
         )
         if not is_writable_gradebook_enabled(course_key) or not mfe_base_url:
             return None
-        return f'{mfe_base_url}/{course_key}'
+        return f'{mfe_base_url.rstrip("/")}/{course_key}'
 
     def get_studio_grading_url(self, data):
         """Get Studio MFE grading settings URL for the course."""
@@ -476,7 +476,7 @@ class CourseInformationSerializerV2(serializers.Serializer):
         )
         if not mfe_base_url:
             return None
-        return f'{mfe_base_url}/course/{course_key}/settings/grading'
+        return f'{mfe_base_url.rstrip("/")}/course/{course_key}/settings/grading'
 
     def get_admin_console_url(self, data):
         """Get admin console URL (requires instructor access and MFE configuration, null if not accessible)."""
@@ -490,7 +490,7 @@ class CourseInformationSerializerV2(serializers.Serializer):
         has_permissions = request.user.is_staff or has_instructor_access
         if not mfe_base_url or not has_permissions:
             return None
-        return f'{mfe_base_url}/authz'
+        return f'{mfe_base_url.rstrip("/")}/authz'
 
     def get_disable_buttons(self, data):
         """Check if buttons should be disabled for large courses."""
