@@ -7,11 +7,13 @@ import ddt
 from django.conf import settings
 from django.test.utils import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from edx_proctoring.api import (
     add_allowance_for_user,
     create_exam,
     create_exam_attempt,
 )
+from edx_proctoring.models import ProctoredExamStudentAttempt
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -656,11 +658,13 @@ class CourseExamAttemptsViewTest(ModuleStoreTestCase):
         'proctored_exam.time_limit_mins',
         'type',
         'started_at',
+        'start_time',
         'completed_at',
+        'end_time',
         'status',
     )
     def test_sort_attempts(self, ordering):
-        """Verify all ordering fields are accepted and return correct results."""
+        """Verify all ordering fields produce reversed results for asc vs desc."""
         student2 = UserFactory(username='student2', email='student2@example.com')
         exam_id_2 = create_exam(
             course_id=self.course_id,
@@ -669,9 +673,16 @@ class CourseExamAttemptsViewTest(ModuleStoreTestCase):
             time_limit_mins=120,
             is_proctored=True,
         )
-        create_exam_attempt(self.exam_id, self.student.id)
+        attempt_id_1 = create_exam_attempt(self.exam_id, self.student.id)
         create_exam_attempt(exam_id_2, student2.id)
-        # Verify ascending and descending return reversed order
+
+        # Give attempt 1 a distinct completed_at and status so all fields differ
+        attempt = ProctoredExamStudentAttempt.objects.get(id=attempt_id_1)
+        attempt.started_at = timezone.now() - timezone.timedelta(hours=1)
+        attempt.completed_at = timezone.now()
+        attempt.status = 'submitted'
+        attempt.save()
+
         asc_response = self.client.get(self._url(), {'ordering': ordering})
         desc_response = self.client.get(self._url(), {'ordering': f'-{ordering}'})
         assert asc_response.status_code == status.HTTP_200_OK
