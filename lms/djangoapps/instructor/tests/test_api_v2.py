@@ -119,11 +119,13 @@ class CourseMetadataViewTest(SharedModuleStoreTestCase):
             course_id = str(self.course_key)
         return reverse('instructor_api_v2:course_metadata', kwargs={'course_id': course_id})
 
-    @override_settings(COURSE_AUTHORING_MICROFRONTEND_URL='http://localhost:2001/authoring')
-    @override_settings(ADMIN_CONSOLE_MICROFRONTEND_URL='http://localhost:2025/admin-console')
-    @override_settings(WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook')
+    @override_settings(
+        COURSE_AUTHORING_MICROFRONTEND_URL='http://localhost:2001/authoring',
+        ADMIN_CONSOLE_MICROFRONTEND_URL='http://localhost:2025/admin-console',
+        WRITABLE_GRADEBOOK_URL='http://localhost:1994/gradebook',
+    )
     @patch('lms.djangoapps.instructor.views.serializers_v2.is_writable_gradebook_enabled', return_value=True)
-    def test_get_course_metadata_as_instructor(self, mock_is_writable_gradebook_enabled):
+    def test_get_course_metadata_as_instructor(self, _mock_is_writable_gradebook_enabled):
         """
         Test that an instructor can retrieve comprehensive course metadata.
         """
