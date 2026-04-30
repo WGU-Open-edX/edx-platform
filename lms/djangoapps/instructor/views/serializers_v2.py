@@ -1171,6 +1171,23 @@ class ScoreOverrideRequestSerializer(serializers.Serializer):
         return super().to_internal_value(data)
 
 
+def derive_exam_type(exam_dict):
+    """
+    Derive exam type string from proctoring flags.
+
+    Args:
+        exam_dict: dict with 'is_proctored' and 'is_practice_exam' keys.
+
+    Returns:
+        'practice', 'proctored', or 'timed'.
+    """
+    if exam_dict.get('is_practice_exam'):
+        return 'practice'
+    if exam_dict.get('is_proctored'):
+        return 'proctored'
+    return 'timed'
+
+
 class SpecialExamSerializer(serializers.Serializer):
     """Serializer for proctored/timed exam data from edx_proctoring."""
     id = serializers.IntegerField()
@@ -1188,11 +1205,7 @@ class SpecialExamSerializer(serializers.Serializer):
 
     def get_exam_type(self, obj):
         """Derive exam type from proctoring flags."""
-        if obj.get('is_practice_exam'):
-            return 'practice'
-        if obj.get('is_proctored'):
-            return 'proctored'
-        return 'timed'
+        return derive_exam_type(obj)
 
 
 class ExamAttemptUserSerializer(serializers.Serializer):
@@ -1215,12 +1228,7 @@ class ExamAttemptSerializer(serializers.Serializer):
 
     def get_exam_type(self, obj):
         """Derive exam type from proctored_exam flags."""
-        exam = obj.get('proctored_exam', {})
-        if exam.get('is_practice_exam'):
-            return 'practice'
-        if exam.get('is_proctored'):
-            return 'proctored'
-        return 'timed'
+        return derive_exam_type(obj.get('proctored_exam', {}))
 
 
 class ProctoringSettingsSerializer(serializers.Serializer):

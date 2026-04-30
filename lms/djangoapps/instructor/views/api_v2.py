@@ -160,6 +160,7 @@ from .serializers_v2 import (
     TaskStatusSerializer,
     ToggleCertificateGenerationSerializer,
     UnitExtensionSerializer,
+    derive_exam_type,
 )
 from .tools import find_unit, get_units_with_due_date, keep_field_private, set_due_date_extension, title_or_url
 
@@ -4515,18 +4516,16 @@ class CourseExamAttemptsView(DeveloperErrorViewMixin, ListAPIView):
         'time_limit': 'proctored_exam.time_limit_mins',
         'proctored_exam.time_limit_mins': 'proctored_exam.time_limit_mins',
         'started_at': 'started_at',
+        'start_time': 'started_at',
         'completed_at': 'completed_at',
+        'end_time': 'completed_at',
         'status': 'status',
     }
 
-    def _get_exam_type(self, attempt):
+    @staticmethod
+    def _get_exam_type(attempt):
         """Derive exam type string for sorting purposes."""
-        exam = attempt.get('proctored_exam', {})
-        if exam.get('is_practice_exam'):
-            return 'practice'
-        if exam.get('is_proctored'):
-            return 'proctored'
-        return 'timed'
+        return derive_exam_type(attempt.get('proctored_exam', {}))
 
     def get_queryset(self):
         course_id = self.kwargs['course_id']

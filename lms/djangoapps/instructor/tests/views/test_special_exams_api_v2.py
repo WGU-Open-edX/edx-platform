@@ -671,11 +671,16 @@ class CourseExamAttemptsViewTest(ModuleStoreTestCase):
         )
         create_exam_attempt(self.exam_id, self.student.id)
         create_exam_attempt(exam_id_2, student2.id)
-        # Verify ascending and descending both succeed
-        for prefix in ('', '-'):
-            response = self.client.get(self._url(), {'ordering': f'{prefix}{ordering}'})
-            assert response.status_code == status.HTTP_200_OK
-            assert len(response.json()['results']) == 2
+        # Verify ascending and descending return reversed order
+        asc_response = self.client.get(self._url(), {'ordering': ordering})
+        desc_response = self.client.get(self._url(), {'ordering': f'-{ordering}'})
+        assert asc_response.status_code == status.HTTP_200_OK
+        assert desc_response.status_code == status.HTTP_200_OK
+        asc_results = asc_response.json()['results']
+        desc_results = desc_response.json()['results']
+        assert len(asc_results) == 2
+        assert asc_results[0] == desc_results[1]
+        assert asc_results[1] == desc_results[0]
 
     def test_sort_attempts_descending(self):
         student2 = UserFactory(username='student2', email='student2@example.com')
