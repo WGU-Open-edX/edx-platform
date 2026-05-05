@@ -2242,10 +2242,12 @@ class RegenerateCertificatesViewTest(SharedModuleStoreTestCase):
         assert response.data['task_id'] == 'test-task-id-123'
 
         # Assert the task API was called with the correct parameters
+        # Expected call signature: generate_certificates_for_students(request, course_key, student_set=...)
         mock_generate_certs.assert_called_once()
-        call_kwargs = mock_generate_certs.call_args.kwargs
-        assert call_kwargs['student_set'] == 'allowlisted_not_generated'
-        assert call_kwargs['course_key'] == self.course_key
+        call_args = mock_generate_certs.call_args
+        _, course_key_arg = call_args.args[:2]  # Unpack request and course_key positional args
+        assert course_key_arg == self.course_key
+        assert call_args.kwargs['student_set'] == 'allowlisted_not_generated'
 
     @patch('lms.djangoapps.instructor.views.api_v2.task_api.generate_certificates_for_students')
     def test_allowlisted_translates_to_all_allowlisted(self, mock_generate_certs):
@@ -2274,6 +2276,37 @@ class RegenerateCertificatesViewTest(SharedModuleStoreTestCase):
         mock_generate_certs.assert_called_once()
         call_kwargs = mock_generate_certs.call_args.kwargs
         assert call_kwargs['student_set'] == 'all_allowlisted'
+
+    @patch('lms.djangoapps.instructor.views.api_v2.task_api.generate_certificates_for_students')
+    def test_all_students_omits_student_set_kwarg(self, mock_generate_certs):
+        """
+        Test that student_set='all' calls the task layer without a student_set kwarg.
+
+        This ensures the default behavior (generate for all enrolled students) is preserved.
+        """
+        # Mock the task API to return a fake InstructorTask
+        mock_task = MagicMock()
+        mock_task.task_id = 'test-task-id-789'
+        mock_generate_certs.return_value = mock_task
+
+        # Authenticate and make the request with student_set='all'
+        self.client.force_authenticate(user=self.instructor)
+        response = self.client.post(
+            self._get_url(),
+            data={'student_set': 'all'},
+            format='json'
+        )
+
+        # Assert the response is successful
+        assert response.status_code == status.HTTP_200_OK
+
+        # Assert the task API was called without student_set kwarg
+        # Expected call signature: generate_certificates_for_students(request, course_key)
+        mock_generate_certs.assert_called_once()
+        call_args = mock_generate_certs.call_args
+        _, course_key_arg = call_args.args[:2]  # Unpack request and course_key positional args
+        assert course_key_arg == self.course_key
+        assert 'student_set' not in call_args.kwargs
 
 
 @ddt.ddt
