@@ -845,7 +845,10 @@ class RegenerateCertificatesSerializer(serializers.Serializer):
         choices=['all', 'allowlisted', 'allowlisted_not_generated'],
         required=False,
         default='all',
-        help_text="Student set filter: 'all' for all students, 'allowlisted' for all allowlisted students, 'allowlisted_not_generated' for allowlisted students without certificates"
+        help_text=(
+            "Student set filter: 'all' for all students, 'allowlisted' for all allowlisted students, "
+            "'allowlisted_not_generated' for allowlisted students without certificates"
+        )
     )
 
 
@@ -857,7 +860,7 @@ class LearnerInputSerializer(serializers.Serializer):
         required=True,
         max_length=255,
         allow_blank=False,
-        help_text="Username or email address of the learner"
+        help_text="Username or email address of the learner",
     )
 
     def validate_email_or_username(self, value):
