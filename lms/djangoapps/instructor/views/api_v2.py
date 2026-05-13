@@ -43,9 +43,8 @@ from edx_proctoring.exceptions import (
     ProctoredBaseException,
     ProctoredExamNotFoundException,
 )
-from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
-from openedx.core.djangoapps.cors_csrf.authentication import SessionAuthenticationCrossDomainCsrf
 from edx_proctoring.models import ProctoredExamStudentAllowance
+from edx_rest_framework_extensions.auth.jwt.authentication import JwtAuthentication
 from edx_rest_framework_extensions.paginators import DefaultPagination
 from edx_when import api as edx_when_api
 from opaque_keys import InvalidKeyError
@@ -4189,7 +4188,7 @@ class SpecialExamResetView(DeveloperErrorViewMixin, APIView):
         POST /api/instructor/v2/courses/{course_id}/special_exams/{exam_id}/reset/{username}
     """
 
-    authentication_classes = (JwtAuthentication, SessionAuthenticationCrossDomainCsrf)
+    authentication_classes = (JwtAuthentication,)
     permission_classes = (IsAuthenticated, permissions.InstructorPermission)
     permission_name = permissions.EXAM_RESULTS
 
