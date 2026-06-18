@@ -46,8 +46,9 @@ from lms.djangoapps.courseware.toggles import courseware_disable_navigation_side
 from lms.djangoapps.courseware.views.views import get_cert_data
 from lms.djangoapps.grades.course_grade_factory import CourseGradeFactory
 from lms.djangoapps.utils import OptimizelyClient
-from openedx.core.djangoapps.content.learning_sequences.api import get_user_course_outline
+from openedx.core.djangoapps.content.block_structure.api import get_block_structure_manager
 from openedx.core.djangoapps.content.course_overviews.api import get_course_overview_or_404
+from openedx.core.djangoapps.content.learning_sequences.api import get_user_course_outline
 from openedx.core.djangoapps.course_groups.cohorts import get_cohort
 from openedx.core.lib.api.authentication import BearerAuthenticationAllowInactiveUser
 from openedx.features.course_duration_limits.access import get_access_expiration_data
@@ -472,6 +473,9 @@ class CourseNavigationBlocksView(RetrieveAPIView):
             course_blocks = cache.get(cache_key)
 
         if not course_blocks:
+            # Ensure the block structure cache is up-to-date before reading.
+            get_block_structure_manager(course_key).update_collected_if_needed()
+
             if getattr(enrollment, 'is_active', False) or bool(staff_access):
                 course_blocks = get_course_outline_block_tree(request, course_key_string, request.user)
             elif allow_public_outline or allow_public or user_is_masquerading:

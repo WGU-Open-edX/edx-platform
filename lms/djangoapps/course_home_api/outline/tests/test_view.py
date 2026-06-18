@@ -900,3 +900,37 @@ class SidebarBlocksTestViews(BaseCourseHomeTests):
         response = self.client.get(reverse('course-home:course-navigation', args=[self.course.id]))
         vertical_data = response.data['blocks'][str(self.vertical.location)]
         assert vertical_data['icon'] == 'video'
+
+    def test_navigation_serves_fresh_data_after_publish(self):
+        """
+        Regression test: the navigation sidebar should serve fresh data when
+        the modulestore has changed but the block structure cache is stale.
+
+        This simulates a production scenario where:
+        1. A unit is deleted and the course is auto-published
+        2. The block structure rebuild Celery task is queued with a 30s delay
+        3. A learner hits the navigation endpoint during that 30s window
+
+        Without the fix, stale block structure data gets cached for 1 hour.
+        """
+        self.add_blocks_to_course()
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.VERIFIED)
+
+        # First request — populates both block structure and navigation caches
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        sequential_data = response.data['blocks'][str(self.sequential.location)]
+        assert str(self.vertical.location) in sequential_data['children']
+
+        # Delete the vertical directly in the modulestore. Signals are disabled
+        # in ModuleStoreTestCase, so the block structure cache is now stale —
+        # mirroring the 30s window in production before the rebuild task runs.
+        self.store.delete_item(self.vertical.location, self.user.id)
+        update_outline_from_modulestore(self.course.id)
+
+        # Without the fix, this returns stale data with the deleted vertical.
+        # With the fix, update_collected_if_needed() detects staleness and rebuilds.
+        response = self.client.get(self.url)
+        assert response.status_code == 200
+        sequential_data = response.data['blocks'][str(self.sequential.location)]
+        assert str(self.vertical.location) not in sequential_data['children']
