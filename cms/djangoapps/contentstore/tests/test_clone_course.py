@@ -14,6 +14,7 @@ from cms.djangoapps.contentstore.tests.utils import CourseTestCase
 from common.djangoapps.course_action_state.managers import CourseRerunUIStateManager
 from common.djangoapps.course_action_state.models import CourseRerunState
 from common.djangoapps.student.auth import has_course_author_access
+from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
 from xmodule.contentstore.content import StaticContent  # pylint: disable=wrong-import-order
 from xmodule.contentstore.django import contentstore  # pylint: disable=wrong-import-order
 from xmodule.modulestore import EdxJSONEncoder, ModuleStoreEnum  # pylint: disable=wrong-import-order
@@ -183,6 +184,5 @@ class CloneCourseTest(CourseTestCase):
             has_course_author_access(self.user, dest_course_id),
             "User should have author access after rerun task completes",
         )
-        from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
         self.assertTrue(CourseInstructorRole(dest_course_id).has_user(self.user))  # noqa: PT009
         self.assertTrue(CourseStaffRole(dest_course_id).has_user(self.user))  # noqa: PT009
