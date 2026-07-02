@@ -491,3 +491,244 @@ class TestCourseHandlerAuthz(
         })
 
         assert response.status_code == 403
+
+
+class TestCourseRerunAuthz(
+    CourseAuthoringAuthzTestMixin,
+    ModuleStoreTestCase,
+):
+    """
+    Tests for course rerun behavior when authz.enable_course_authoring is enabled.
+
+    Verifies that:
+    - Rerun succeeds without calling add_instructor pre-task (which would fail
+      because CourseOverview doesn't exist yet).
+    - add_instructor is called in the task after clone_course, when CourseOverview
+      can be resolved.
+    - The initiating user can see in-process rerun status via created_user check.
+    """
+
+    def setUp(self):
+        super().setUp()
+
+        self.url = reverse("course_handler")
+
+        # Create a source course
+        self.source_course = CourseFactory.create(
+            org='testorg',
+            number='101',
+            run='2025_Spring',
+            display_name='Source Course',
+        )
+        self.source_course_key = self.source_course.id
+
+        # Give the staff user instructor/staff access to the source course
+        for role in [CourseInstructorRole, CourseStaffRole]:
+            role(self.source_course_key).add_users(self.staff_user)
+
+        self.staff_client = AjaxEnabledTestClient()
+        self.staff_client.login(
+            username=self.staff_user.username,
+            password=self.password,
+        )
+
+    def test_rerun_succeeds_with_authz_enabled(self):
+        """
+        Test that course rerun completes successfully when authz.enable_course_authoring
+        is enabled. Previously this would fail with CourseOverview.DoesNotExist because
+        add_instructor was called before the course was cloned.
+        """
+        response = self.staff_client.ajax_post(self.url, {
+            'source_course_key': str(self.source_course_key),
+            'org': self.source_course_key.org,
+            'course': self.source_course_key.course,
+            'run': 'rerun_authz',
+            'display_name': 'Rerun with AuthZ',
+        })
+
+        assert response.status_code == 200
+        data = parse_json(response)
+        dest_course_key = CourseKey.from_string(data['destination_course_key'])
+
+        # Verify the rerun completed (task runs eagerly in tests)
+        dest_course = self.store.get_course(dest_course_key)
+        assert dest_course is not None
+        assert dest_course.display_name == 'Rerun with AuthZ'
+
+    def test_rerun_does_not_create_legacy_roles_with_authz_enabled(self):
+        """
+        Test that when authz.enable_course_authoring is enabled, the rerun does not
+        create legacy CourseAccessRole records pre-task. Legacy roles should not exist
+        when authz is enabled to avoid database inconsistencies.
+        """
+        from common.djangoapps.student.models import CourseAccessRole
+
+        response = self.staff_client.ajax_post(self.url, {
+            'source_course_key': str(self.source_course_key),
+            'org': self.source_course_key.org,
+            'course': self.source_course_key.course,
+            'run': 'rerun_no_legacy',
+            'display_name': 'Rerun No Legacy Roles',
+        })
+
+        assert response.status_code == 200
+        data = parse_json(response)
+        dest_course_key = CourseKey.from_string(data['destination_course_key'])
+
+        # Verify no legacy CourseAccessRole records were created for the destination course.
+        # When authz is enabled, permissions are managed entirely through the authz layer.
+        legacy_roles = CourseAccessRole.objects.filter(
+            user=self.staff_user,
+            course_id=dest_course_key,
+        )
+        assert not legacy_roles.exists()
+
+    def test_rerun_grants_authz_permissions_after_clone(self):
+        """
+        Test that after a successful rerun with authz enabled, the user has proper
+        permissions via the authz layer (add_instructor is called in the task after
+        clone_course completes and CourseOverview is available).
+        """
+        response = self.staff_client.ajax_post(self.url, {
+            'source_course_key': str(self.source_course_key),
+            'org': self.source_course_key.org,
+            'course': self.source_course_key.course,
+            'run': 'rerun_perms',
+            'display_name': 'Rerun Permissions Test',
+        })
+
+        assert response.status_code == 200
+        data = parse_json(response)
+        dest_course_key = CourseKey.from_string(data['destination_course_key'])
+
+        # Verify the user has author access to the new course via the role system
+        from common.djangoapps.student.auth import has_course_author_access
+        assert has_course_author_access(self.staff_user, dest_course_key)
+
+    def test_in_process_rerun_visible_to_initiating_user(self):
+        """
+        Test that the user who initiated the rerun can see the in-process status
+        via the created_user check in get_in_process_course_actions, even when
+        authz permissions haven't been fully established yet.
+        """
+        from cms.djangoapps.contentstore.views.course import get_in_process_course_actions
+
+        # Create a CourseRerunState in non-succeeded state to simulate an in-progress rerun
+        from common.djangoapps.course_action_state.models import CourseRerunState
+        from opaque_keys.edx.locator import CourseLocator
+
+        dest_course_key = CourseLocator(org='testorg', course='101', run='in_progress_rerun')
+        CourseRerunState.objects.initiated(
+            self.source_course_key, dest_course_key, self.staff_user, 'In Progress Rerun'
+        )
+
+        # Build a request for the staff user who initiated the rerun
+        request = RequestFactory().get('/')
+        request.user = self.staff_user
+
+        # The user should see the in-process action even without explicit course permissions
+        in_process_actions = get_in_process_course_actions(request)
+        action_course_keys = [action.course_key for action in in_process_actions]
+        assert dest_course_key in action_course_keys
+
+    def test_in_process_rerun_not_visible_to_other_users(self):
+        """
+        Test that a user who did NOT initiate the rerun cannot see the in-process
+        status (unless they have course permissions).
+        """
+        from cms.djangoapps.contentstore.views.course import get_in_process_course_actions
+        from common.djangoapps.course_action_state.models import CourseRerunState
+        from opaque_keys.edx.locator import CourseLocator
+
+        dest_course_key = CourseLocator(org='testorg', course='101', run='other_user_rerun')
+        CourseRerunState.objects.initiated(
+            self.source_course_key, dest_course_key, self.staff_user, 'Other User Rerun'
+        )
+
+        # Build a request for a different user who did not initiate the rerun
+        request = RequestFactory().get('/')
+        request.user = self.unauthorized_user
+
+        # The other user should NOT see the in-process action
+        in_process_actions = get_in_process_course_actions(request)
+        action_course_keys = [action.course_key for action in in_process_actions]
+        assert dest_course_key not in action_course_keys
+
+
+class TestCourseRerunLegacy(ModuleStoreTestCase):
+    """
+    Tests for course rerun behavior when authz.enable_course_authoring is DISABLED
+    (legacy mode). Verifies the original behavior is preserved.
+    """
+
+    def setUp(self):
+        super().setUp()
+
+        self.url = reverse("course_handler")
+        self.user = UserFactory()
+        self.client = AjaxEnabledTestClient()
+        self.client.login(username=self.user.username, password=self.TEST_PASSWORD)
+
+        # Create a source course and give user access
+        self.source_course = CourseFactory.create(
+            org='legacyorg',
+            number='201',
+            run='2025_Fall',
+            display_name='Legacy Source Course',
+        )
+        self.source_course_key = self.source_course.id
+
+        for role in [CourseInstructorRole, CourseStaffRole]:
+            role(self.source_course_key).add_users(self.user)
+
+    def test_rerun_creates_legacy_roles_pre_task(self):
+        """
+        Test that when authz is disabled (legacy mode), add_instructor is called
+        pre-task and creates CourseAccessRole records immediately.
+        """
+        from common.djangoapps.student.models import CourseAccessRole
+
+        response = self.client.ajax_post(self.url, {
+            'source_course_key': str(self.source_course_key),
+            'org': self.source_course_key.org,
+            'course': self.source_course_key.course,
+            'run': 'legacy_rerun',
+            'display_name': 'Legacy Rerun',
+        })
+
+        assert response.status_code == 200
+        data = parse_json(response)
+        dest_course_key = CourseKey.from_string(data['destination_course_key'])
+
+        # Verify legacy CourseAccessRole records exist for the destination course
+        legacy_roles = CourseAccessRole.objects.filter(
+            user=self.user,
+            course_id=dest_course_key,
+        )
+        assert legacy_roles.filter(role='instructor').exists()
+        assert legacy_roles.filter(role='staff').exists()
+
+    def test_rerun_succeeds_with_authz_disabled(self):
+        """
+        Test that course rerun still works correctly when authz is disabled.
+        """
+        response = self.client.ajax_post(self.url, {
+            'source_course_key': str(self.source_course_key),
+            'org': self.source_course_key.org,
+            'course': self.source_course_key.course,
+            'run': 'legacy_rerun_success',
+            'display_name': 'Legacy Rerun Success',
+        })
+
+        assert response.status_code == 200
+        data = parse_json(response)
+        dest_course_key = CourseKey.from_string(data['destination_course_key'])
+
+        # Verify the course was created
+        dest_course = self.store.get_course(dest_course_key)
+        assert dest_course is not None
+        assert dest_course.display_name == 'Legacy Rerun Success'
+
+        # Verify author access
+        from common.djangoapps.student.auth import has_course_author_access
+        assert has_course_author_access(self.user, dest_course_key)

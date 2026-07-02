@@ -141,3 +141,48 @@ class CloneCourseTest(CourseTestCase):
                 course_key=split_course4_id,
                 state=CourseRerunUIStateManager.State.FAILED
             )
+
+
+    def test_rerun_course_grants_instructor_access(self):
+        """
+        Test that the rerun_course task grants instructor and staff access
+        to the user after cloning. This verifies add_instructor is called
+        inside the task (needed when authz.enable_course_authoring is enabled
+        and add_instructor cannot be called pre-task).
+        """
+        org = 'edX'
+        course_number = 'CS101'
+        course_run = '2025_Q1'
+        display_name = 'rerun_instructor_test'
+        fields = {'display_name': display_name}
+
+        # Create a source course
+        source_course = CourseFactory.create(
+            org=org,
+            number=course_number,
+            run=course_run,
+            display_name=display_name,
+            default_store=ModuleStoreEnum.Type.split,
+        )
+
+        dest_course_id = CourseLocator(org=org, course=course_number, run="instructor_rerun")
+        CourseRerunState.objects.initiated(
+            source_course.id, dest_course_id, self.user, fields['display_name']
+        )
+
+        result = rerun_course.delay(
+            str(source_course.id),
+            str(dest_course_id),
+            self.user.id,
+            json.dumps(fields, cls=EdxJSONEncoder),
+        )
+        self.assertEqual(result.get(), "succeeded")  # noqa: PT009
+
+        # Verify the user has instructor and staff access on the new course
+        self.assertTrue(  # noqa: PT009
+            has_course_author_access(self.user, dest_course_id),
+            "User should have author access after rerun task completes",
+        )
+        from common.djangoapps.student.roles import CourseInstructorRole, CourseStaffRole
+        self.assertTrue(CourseInstructorRole(dest_course_id).has_user(self.user))  # noqa: PT009
+        self.assertTrue(CourseStaffRole(dest_course_id).has_user(self.user))  # noqa: PT009
