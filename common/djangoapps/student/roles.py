@@ -42,6 +42,9 @@ def get_authz_role_from_legacy_role(legacy_role: str) -> str:
 def get_legacy_role_from_authz_role(authz_role: str) -> str:
     return next((k for k, v in authz_roles.LEGACY_COURSE_ROLE_EQUIVALENCES.items() if v == authz_role), None)
 
+def legacy_role_has_authz_equivalent(legacy_role: str) -> bool:
+    role = get_authz_role_from_legacy_role(legacy_role)
+    return role is not None
 
 def authz_add_role(user: User, authz_role: str, course_key: str):
     """
@@ -520,7 +523,7 @@ class RoleBase(AccessRole):
         """
         Add the supplied django users to this role.
         """
-        if enable_authz_course_authoring(self.course_key):
+        if enable_authz_course_authoring(self.course_key) and legacy_role_has_authz_equivalent(self.ROLE):
             self._authz_add_users(users)
         else:
             self._legacy_add_users(users)
