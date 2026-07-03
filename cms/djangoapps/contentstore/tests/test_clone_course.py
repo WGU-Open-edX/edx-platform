@@ -150,6 +150,11 @@ class CloneCourseTest(CourseTestCase):
         to the user after cloning. This verifies add_instructor is called
         inside the task (needed when authz.enable_course_authoring is enabled
         and add_instructor cannot be called pre-task).
+
+        TODO: This test covers a temporary workaround until openedx/openedx-authz#352
+        is implemented. Once authz supports pre-assigning roles without a CourseOverview,
+        add_instructor can move back to the pre-task call site and this test can be
+        simplified.
         """
         org = 'edX'
         course_number = 'CS101'
@@ -177,12 +182,9 @@ class CloneCourseTest(CourseTestCase):
             self.user.id,
             json.dumps(fields, cls=EdxJSONEncoder),
         )
-        self.assertEqual(result.get(), "succeeded")  # noqa: PT009
+        assert result.get() == "succeeded"
 
         # Verify the user has instructor and staff access on the new course
-        self.assertTrue(  # noqa: PT009
-            has_course_author_access(self.user, dest_course_id),
-            "User should have author access after rerun task completes",
-        )
-        self.assertTrue(CourseInstructorRole(dest_course_id).has_user(self.user))  # noqa: PT009
-        self.assertTrue(CourseStaffRole(dest_course_id).has_user(self.user))  # noqa: PT009
+        assert has_course_author_access(self.user, dest_course_id)
+        assert CourseInstructorRole(dest_course_id).has_user(self.user)
+        assert CourseStaffRole(dest_course_id).has_user(self.user)

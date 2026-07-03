@@ -513,6 +513,12 @@ class TestCourseRerunAuthz(
     - add_instructor is called in the task after clone_course, when CourseOverview
       can be resolved.
     - The initiating user can see in-process rerun status via created_user check.
+
+    TODO: These tests cover a temporary workaround needed while (1) the authz system
+    doesn't support pre-assigning roles without a CourseOverview, and (2) we support
+    both authz and legacy systems simultaneously. Once openedx/openedx-authz#352 is
+    implemented, this class can be simplified — the conditional skip of add_instructor
+    and the created_user visibility fallback will no longer be needed.
     """
 
     def setUp(self):
