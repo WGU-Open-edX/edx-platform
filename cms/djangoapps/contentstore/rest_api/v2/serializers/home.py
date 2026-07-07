@@ -30,7 +30,7 @@ class CourseCommonSerializerV2(serializers.Serializer):
     lms_link = serializers.SerializerMethodField()
     cms_link = serializers.SerializerMethodField()
     number = serializers.CharField()
-    display_numbers = serializers.CharField(source='display_number_with_default')
+    display_number = serializers.CharField(source='display_number_with_default')
     org = serializers.CharField()
     display_org = serializers.CharField(source='display_org_with_default')
     rerun_link = serializers.SerializerMethodField()
