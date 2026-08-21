@@ -19,6 +19,7 @@ from opaque_keys import InvalidKeyError
 from opaque_keys.edx.asides import AsideUsageKeyV2
 from opaque_keys.edx.keys import CourseKey, UsageKey
 from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator
+from openedx_authz.constants.permissions import COURSES_EDIT_COURSE_CONTENT, COURSES_VIEW_COURSE
 from openedx_authz.constants.roles import COURSE_ADMIN, COURSE_AUDITOR, COURSE_EDITOR, COURSE_STAFF
 from openedx_events.content_authoring.data import DuplicatedXBlockData
 from openedx_events.content_authoring.signals import XBLOCK_DUPLICATED
@@ -543,6 +544,132 @@ class GetItemTest(ItemTest):
                 self.assertNotIn("ancestors", response)  # noqa: PT009
                 xblock_info = get_block_info(xblock)
                 self.assertEqual(xblock_info, response)  # noqa: PT009
+
+
+class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
+    """
+    Regression tests for the ``header-actions`` div gating introduced to
+    conditionally render the component card action menu based on the RBAC
+    ``courses.edit_course_content`` permission.
+
+    The gate uses two independent context flags:
+    - ``is_authz_authoring_enabled``: True when enable_authz_course_authoring
+      is on for the course.
+    - ``authz_can_edit_course_content``: True when the user holds
+      courses.edit_course_content (only evaluated when the flag is on).
+
+    The template condition is:
+        ``not is_authz_authoring_enabled or authz_can_edit_course_content``
+
+    So the div is shown when the flag is off (preserving existing behaviour)
+    or when the flag is on and the user has the permission.
+    """
+
+    AUTHZ_FLAG_PATH = (
+        "cms.djangoapps.contentstore.views.block.enable_authz_course_authoring"
+    )
+    # Patch user_has_course_permission at the block.py binding so the
+    # authz_can_edit_course_content value is fully controlled by the test.
+    #
+    # NOTE: xblock_view_handler gates the *whole* request on
+    # ``courses.view_course`` via this same binding before the template is ever
+    # rendered.  A blanket return_value=False would make that view-access gate
+    # fail and the handler would raise PermissionDenied (403) before reaching
+    # the header-actions logic.  We therefore drive the mock with a
+    # permission-aware side effect that always grants view access and only
+    # toggles the ``courses.edit_course_content`` permission.
+    AUTHZ_PERMISSION_PATH = (
+        "cms.djangoapps.contentstore.views.block.user_has_course_permission"
+    )
+    HEADER_ACTIONS_DIV = 'class="header-actions"'
+
+    @staticmethod
+    def _permission_side_effect(*, can_edit_course_content):
+        """
+        Build a ``user_has_course_permission`` side effect that always grants
+        ``courses.view_course`` (so the handler returns 200) and returns
+        ``can_edit_course_content`` for ``courses.edit_course_content``.
+
+        The permission identifier is passed as the second positional argument
+        by every call site in ``block.py``.
+        """
+        def _side_effect(_user, permission_identifier, *_args, **_kwargs):
+            if permission_identifier == COURSES_VIEW_COURSE.identifier:
+                return True
+            if permission_identifier == COURSES_EDIT_COURSE_CONTENT.identifier:
+                return can_edit_course_content
+            return False
+
+        return _side_effect
+
+    def _get_container_preview_html(self):
+        """
+        Return the rendered HTML for a child vertical card inside a parent vertical.
+
+        ``header-actions`` only appears on non-root blocks (``is_root=False``).
+        We replicate the setup used by ``test_draft_container_preview_html`` in
+        ``test_container_page.py``: create a parent vertical, add a child
+        vertical inside it, then request ``reorderable_container_child_preview``
+        for that child.  A vertical renders cleanly in the test environment
+        without needing any external services, and its card includes the full
+        ``header-actions`` section.
+        """
+        parent_usage_key = self._create_vertical()
+        child_usage_key = self._create_vertical(parent_usage_key=parent_usage_key)
+
+        preview_url = reverse_usage_url(
+            "xblock_view_handler",
+            child_usage_key,
+            {"view_name": "reorderable_container_child_preview"},
+        )
+        resp = self.client.get(preview_url, HTTP_ACCEPT="application/json")
+        self.assertEqual(resp.status_code, 200)  # noqa: PT009
+        return json.loads(resp.content.decode("utf-8"))["html"]
+
+    def test_header_actions_visible_when_flag_off(self):
+        """
+        When enable_authz_course_authoring is off, is_authz_authoring_enabled
+        is False and the template condition ``not False or *`` is always True,
+        so the div must be present regardless of any permission value.
+        Preserves existing behaviour for courses not yet on the authz rollout.
+        """
+        with patch(self.AUTHZ_FLAG_PATH, return_value=False):
+            html = self._get_container_preview_html()
+
+        self.assertIn(self.HEADER_ACTIONS_DIV, html)  # noqa: PT009
+
+    def test_header_actions_visible_when_flag_on_and_user_allowed(self):
+        """
+        When the flag is on and the user holds courses.edit_course_content,
+        is_authz_authoring_enabled=True and authz_can_edit_course_content=True,
+        so the template condition is True and the div must be rendered.
+        """
+        with patch(self.AUTHZ_FLAG_PATH, return_value=True), \
+                patch(
+                    self.AUTHZ_PERMISSION_PATH,
+                    side_effect=self._permission_side_effect(can_edit_course_content=True),
+                ):
+            html = self._get_container_preview_html()
+
+        self.assertIn(self.HEADER_ACTIONS_DIV, html)  # noqa: PT009
+
+    def test_header_actions_hidden_when_flag_on_and_user_denied(self):
+        """
+        When the flag is on and the user does NOT hold courses.edit_course_content,
+        is_authz_authoring_enabled=True and authz_can_edit_course_content=False,
+        so the template condition is False and the entire header-actions div
+        must be absent from the rendered HTML.
+        This is the core regression test: without the fix the div would always
+        render even for read-only users when the authz flag is on.
+        """
+        with patch(self.AUTHZ_FLAG_PATH, return_value=True), \
+                patch(
+                    self.AUTHZ_PERMISSION_PATH,
+                    side_effect=self._permission_side_effect(can_edit_course_content=False),
+                ):
+            html = self._get_container_preview_html()
+
+        self.assertNotIn(self.HEADER_ACTIONS_DIV, html)  # noqa: PT009
 
 
 @ddt.ddt
