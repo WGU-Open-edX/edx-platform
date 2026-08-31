@@ -231,12 +231,13 @@ def xblock_view_handler(request, usage_key_string, view_name): # pylint: disable
             is_pages_view = (
                 view_name == STUDENT_VIEW
             )  # Only the "Pages" view uses student view in Studio
-            can_edit = has_studio_write_access(request.user, usage_key.course_key)
-
             # Gate the header-actions div on courses.edit_course_content when
             # the authz flag is on. See _get_authz_preview_flags for details.
             is_authz_authoring_enabled, authz_can_edit_course_content = (
                 _get_authz_permissions_flags(request.user, usage_key.course_key)
+            )
+            can_edit = has_studio_write_access(request.user, usage_key.course_key) or (
+                is_authz_authoring_enabled and authz_can_edit_course_content
             )
 
             # Determine the items to be shown as reorderable. Note that the view
