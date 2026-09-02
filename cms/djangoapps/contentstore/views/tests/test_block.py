@@ -19,7 +19,11 @@ from opaque_keys import InvalidKeyError
 from opaque_keys.edx.asides import AsideUsageKeyV2
 from opaque_keys.edx.keys import CourseKey, UsageKey
 from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator
-from openedx_authz.constants.permissions import COURSES_EDIT_COURSE_CONTENT, COURSES_VIEW_COURSE
+from openedx_authz.constants.permissions import (
+    COURSES_EDIT_COURSE_CONTENT,
+    COURSES_MANAGE_TAGS,
+    COURSES_VIEW_COURSE,
+)
 from openedx_authz.constants.roles import COURSE_ADMIN, COURSE_AUDITOR, COURSE_EDITOR, COURSE_STAFF
 from openedx_events.content_authoring.data import DuplicatedXBlockData
 from openedx_events.content_authoring.signals import XBLOCK_DUPLICATED
@@ -584,11 +588,12 @@ class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
     HEADER_ACTIONS_DIV = 'class="header-actions"'
 
     @staticmethod
-    def _permission_side_effect(*, can_edit_course_content):
+    def _permission_side_effect(*, can_edit_course_content, can_manage_tags=True):
         """
         Build a ``user_has_course_permission`` side effect that always grants
-        ``courses.view_course`` (so the handler returns 200) and returns
-        ``can_edit_course_content`` for ``courses.edit_course_content``.
+        ``courses.view_course`` (so the handler returns 200), returns
+        ``can_edit_course_content`` for ``courses.edit_course_content`` and
+        ``can_manage_tags`` for ``courses.manage_tags``.
 
         The permission identifier is passed as the second positional argument
         by every call site in ``block.py``.
@@ -598,6 +603,8 @@ class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
                 return True
             if permission_identifier == COURSES_EDIT_COURSE_CONTENT.identifier:
                 return can_edit_course_content
+            if permission_identifier == COURSES_MANAGE_TAGS.identifier:
+                return can_manage_tags
             return False
 
         return _side_effect
@@ -670,6 +677,133 @@ class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
             html = self._get_container_preview_html()
 
         self.assertNotIn(self.HEADER_ACTIONS_DIV, html)  # noqa: PT009
+
+
+class TestXBlockViewHandlerManageTagsAuthz(ItemTest):
+    """
+    Regression tests for the "Manage Tags" action-menu item gating based on the
+    RBAC ``courses.manage_tags`` permission.
+
+    The gate uses two independent context flags:
+    - ``is_authz_authoring_enabled``: True when enable_authz_course_authoring
+      is on for the course.
+    - ``authz_can_manage_tags``: True when the user holds courses.manage_tags
+      (only evaluated when the flag is on).
+
+    The template condition is:
+        ``use_tagging and (not is_authz_authoring_enabled or authz_can_manage_tags)``
+
+    So the "Manage Tags" link is shown when tagging is enabled and either the
+    authz flag is off (preserving existing behaviour) or the flag is on and the
+    user holds the permission.
+
+    Because the outer ``header-actions`` div is itself gated on
+    ``courses.edit_course_content``, these tests always grant that permission so
+    the menu renders and only the "Manage Tags" item is toggled.
+    """
+
+    AUTHZ_FLAG_PATH = (
+        "cms.djangoapps.contentstore.views.block.enable_authz_course_authoring"
+    )
+    AUTHZ_PERMISSION_PATH = (
+        "cms.djangoapps.contentstore.views.block.user_has_course_permission"
+    )
+    MANAGE_TAGS_LINK = 'class="manage-tags-button"'
+
+    @staticmethod
+    def _permission_side_effect(*, can_manage_tags):
+        """
+        Build a ``user_has_course_permission`` side effect that always grants
+        ``courses.view_course`` (200 response) and ``courses.edit_course_content``
+        (so the header-actions menu renders), and returns ``can_manage_tags`` for
+        ``courses.manage_tags``.
+        """
+        def _side_effect(_user, permission_identifier, *_args, **_kwargs):
+            if permission_identifier == COURSES_VIEW_COURSE.identifier:
+                return True
+            if permission_identifier == COURSES_EDIT_COURSE_CONTENT.identifier:
+                return True
+            if permission_identifier == COURSES_MANAGE_TAGS.identifier:
+                return can_manage_tags
+            return False
+
+        return _side_effect
+
+    def _get_container_preview_html(self):
+        """
+        Return the rendered HTML for a leaf ``html`` component card inside a
+        parent vertical.
+
+        The "Manage Tags" action lives inside the ``% if not show_inline:``
+        block of the card template, where ``show_inline = xblock.has_children
+        and not xblock_url``.  A vertical has children and no studio URL, so it
+        is rendered inline and its "Manage Tags" item is never emitted.  A leaf
+        ``html`` component has no children and does have a studio URL, so
+        ``show_inline`` is False and the action menu (including "Manage Tags")
+        is rendered.  Requesting ``reorderable_container_child_preview`` for the
+        component yields a non-root card that includes the full action menu.
+        """
+        parent_usage_key = self._create_vertical()
+        resp = self.create_xblock(
+            parent_usage_key=parent_usage_key, category="html"
+        )
+        self.assertEqual(resp.status_code, 200)  # noqa: PT009
+        child_usage_key = self.response_usage_key(resp)
+
+        preview_url = reverse_usage_url(
+            "xblock_view_handler",
+            child_usage_key,
+            {"view_name": "reorderable_container_child_preview"},
+        )
+        resp = self.client.get(preview_url, HTTP_ACCEPT="application/json")
+        self.assertEqual(resp.status_code, 200)  # noqa: PT009
+        return json.loads(resp.content.decode("utf-8"))["html"]
+
+    def test_manage_tags_visible_when_flag_off(self):
+        """
+        When enable_authz_course_authoring is off, is_authz_authoring_enabled is
+        False and the ``not False or *`` clause is always True, so the "Manage
+        Tags" link must be present (tagging is enabled in the test environment).
+        Preserves existing behaviour for courses not yet on the authz rollout.
+        """
+        with patch(self.AUTHZ_FLAG_PATH, return_value=False):
+            html = self._get_container_preview_html()
+
+        self.assertIn(self.MANAGE_TAGS_LINK, html)  # noqa: PT009
+
+    def test_manage_tags_visible_when_flag_on_and_user_allowed(self):
+        """
+        When the flag is on and the user holds courses.manage_tags,
+        is_authz_authoring_enabled=True and authz_can_manage_tags=True, so the
+        template condition is True and the "Manage Tags" link must be rendered.
+        """
+        with patch(self.AUTHZ_FLAG_PATH, return_value=True), \
+                patch(
+                    self.AUTHZ_PERMISSION_PATH,
+                    side_effect=self._permission_side_effect(can_manage_tags=True),
+                ):
+            html = self._get_container_preview_html()
+
+        self.assertIn(self.MANAGE_TAGS_LINK, html)  # noqa: PT009
+
+    def test_manage_tags_hidden_when_flag_on_and_user_denied(self):
+        """
+        When the flag is on and the user does NOT hold courses.manage_tags,
+        is_authz_authoring_enabled=True and authz_can_manage_tags=False, so the
+        template condition is False and the "Manage Tags" link must be absent
+        from the rendered HTML, even though the surrounding header-actions menu
+        still renders (the user retains courses.edit_course_content).
+        This is the core regression test: without the fix the link would always
+        render for any user who can see the actions menu when the flag is on.
+        """
+        with patch(self.AUTHZ_FLAG_PATH, return_value=True), \
+                patch(
+                    self.AUTHZ_PERMISSION_PATH,
+                    side_effect=self._permission_side_effect(can_manage_tags=False),
+                ):
+            html = self._get_container_preview_html()
+
+        self.assertNotIn(self.MANAGE_TAGS_LINK, html)  # noqa: PT009
 
 
 @ddt.ddt

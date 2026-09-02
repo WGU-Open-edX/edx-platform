@@ -12,7 +12,11 @@ from django.utils.translation import gettext as _
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_http_methods
 from opaque_keys.edx.keys import CourseKey
-from openedx_authz.constants.permissions import COURSES_EDIT_COURSE_CONTENT, COURSES_VIEW_COURSE
+from openedx_authz.constants.permissions import (
+    COURSES_EDIT_COURSE_CONTENT,
+    COURSES_MANAGE_TAGS,
+    COURSES_VIEW_COURSE,
+)
 from web_fragments.fragment import Fragment
 
 from cms.djangoapps.contentstore.utils import load_services_for_studio
@@ -132,29 +136,41 @@ def xblock_handler(request, usage_key_string=None):
 
 def _get_authz_permissions_flags(user, course_key):
     """
-    Return the two RBAC-authoring flags used to gate the header-actions div
-    in the XBlock component card template.
+    Return the RBAC-authoring flags used to gate portions of the XBlock
+    component card template (the header-actions div and the "Manage Tags"
+    action).
 
-    When ``authz.enable_course_authoring`` is off for the course both flags
+    When ``authz.enable_course_authoring`` is off for the course all flags
     default to values that preserve existing (pre-RBAC) behaviour:
-    - ``is_authz_authoring_enabled = False`` → template always shows the div.
+    - ``is_authz_authoring_enabled = False`` → template always shows the div
+      and the "Manage Tags" action.
     - ``authz_can_edit_course_content = False`` → unused while flag is off.
+    - ``authz_can_manage_tags = False`` → unused while flag is off.
 
-    When the flag is on, ``authz_can_edit_course_content`` reflects whether
-    the requesting user holds the ``courses.edit_course_content`` permission.
+    When the flag is on:
+    - ``authz_can_edit_course_content`` reflects whether the requesting user
+      holds the ``courses.edit_course_content`` permission.
+    - ``authz_can_manage_tags`` reflects whether the requesting user holds the
+      ``courses.manage_tags`` permission.
 
     Returns:
-        tuple[bool, bool]: (is_authz_authoring_enabled, authz_can_edit_course_content)
+        tuple[bool, bool, bool]: (is_authz_authoring_enabled,
+        authz_can_edit_course_content, authz_can_manage_tags)
     """
     if not enable_authz_course_authoring(course_key):
-        return False, False
+        return False, False, False
     can_edit = user_has_course_permission(
         user,
         COURSES_EDIT_COURSE_CONTENT.identifier,
         course_key,
         legacy_permission=LegacyAuthoringPermission.WRITE,
     )
-    return True, can_edit
+    can_manage_tags = user_has_course_permission(
+        user,
+        COURSES_MANAGE_TAGS.identifier,
+        course_key,
+    )
+    return True, can_edit, can_manage_tags
 
 
 @require_http_methods("GET")
@@ -233,11 +249,14 @@ def xblock_view_handler(request, usage_key_string, view_name): # pylint: disable
             )  # Only the "Pages" view uses student view in Studio
             can_edit = has_studio_write_access(request.user, usage_key.course_key)
 
-            # Gate the header-actions div on courses.edit_course_content when
-            # the authz flag is on. See _get_authz_preview_flags for details.
-            is_authz_authoring_enabled, authz_can_edit_course_content = (
-                _get_authz_permissions_flags(request.user, usage_key.course_key)
-            )
+            # Gate the header-actions div on courses.edit_course_content and the
+            # "Manage Tags" action on courses.manage_tags when the authz flag is
+            # on. See _get_authz_permissions_flags for details.
+            (
+                is_authz_authoring_enabled,
+                authz_can_edit_course_content,
+                authz_can_manage_tags,
+            ) = _get_authz_permissions_flags(request.user, usage_key.course_key)
 
             # Determine the items to be shown as reorderable. Note that the view
             # 'reorderable_container_child_preview' is only rendered for xblocks that
@@ -283,6 +302,7 @@ def xblock_view_handler(request, usage_key_string, view_name): # pylint: disable
                     "can_edit": can_edit,
                     "is_authz_authoring_enabled": is_authz_authoring_enabled,
                     "authz_can_edit_course_content": authz_can_edit_course_content,
+                    "authz_can_manage_tags": authz_can_manage_tags,
                     "root_xblock": xblock
                     if (view_name == "container_preview")
                     else None,
