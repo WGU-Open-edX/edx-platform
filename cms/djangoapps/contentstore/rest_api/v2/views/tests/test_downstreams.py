@@ -1723,9 +1723,6 @@ class PostDownstreamSyncAuthzViewTest(
             self.course.id,
         )
 
-        # Also give legacy CourseStaffRole so _load_accessible_block passes
-        add_users(self.superuser, CourseStaffRole(self.course.id), self.authorized_user)
-
         # Confirm the user has NO explicit permissions on the library.
         assert lib_api.get_library_user_permissions(
             self.library_key, self.authorized_user,
