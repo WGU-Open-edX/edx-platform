@@ -630,7 +630,7 @@ class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
             {"view_name": "reorderable_container_child_preview"},
         )
         resp = self.client.get(preview_url, HTTP_ACCEPT="application/json")
-        self.assertEqual(resp.status_code, 200)  # noqa: PT009
+        assert resp.status_code == 200
         return json.loads(resp.content.decode("utf-8"))["html"]
 
     def test_header_actions_visible_when_flag_off(self):
@@ -643,7 +643,7 @@ class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
         with patch(self.AUTHZ_FLAG_PATH, return_value=False):
             html = self._get_container_preview_html()
 
-        self.assertIn(self.HEADER_ACTIONS_DIV, html)  # noqa: PT009
+        assert self.HEADER_ACTIONS_DIV in html
 
     def test_header_actions_visible_when_flag_on_and_user_allowed(self):
         """
@@ -658,7 +658,7 @@ class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
                 ):
             html = self._get_container_preview_html()
 
-        self.assertIn(self.HEADER_ACTIONS_DIV, html)  # noqa: PT009
+        assert self.HEADER_ACTIONS_DIV in html
 
     def test_header_actions_hidden_when_flag_on_and_user_denied(self):
         """
@@ -676,7 +676,7 @@ class TestXBlockViewHandlerHeaderActionsAuthz(ItemTest):
                 ):
             html = self._get_container_preview_html()
 
-        self.assertNotIn(self.HEADER_ACTIONS_DIV, html)  # noqa: PT009
+        assert self.HEADER_ACTIONS_DIV not in html
 
 
 class TestXBlockViewHandlerManageTagsAuthz(ItemTest):
@@ -747,7 +747,7 @@ class TestXBlockViewHandlerManageTagsAuthz(ItemTest):
         resp = self.create_xblock(
             parent_usage_key=parent_usage_key, category="html"
         )
-        self.assertEqual(resp.status_code, 200)  # noqa: PT009
+        assert resp.status_code == 200
         child_usage_key = self.response_usage_key(resp)
 
         preview_url = reverse_usage_url(
@@ -756,7 +756,7 @@ class TestXBlockViewHandlerManageTagsAuthz(ItemTest):
             {"view_name": "reorderable_container_child_preview"},
         )
         resp = self.client.get(preview_url, HTTP_ACCEPT="application/json")
-        self.assertEqual(resp.status_code, 200)  # noqa: PT009
+        assert resp.status_code == 200
         return json.loads(resp.content.decode("utf-8"))["html"]
 
     def test_manage_tags_visible_when_flag_off(self):
@@ -769,7 +769,7 @@ class TestXBlockViewHandlerManageTagsAuthz(ItemTest):
         with patch(self.AUTHZ_FLAG_PATH, return_value=False):
             html = self._get_container_preview_html()
 
-        self.assertIn(self.MANAGE_TAGS_LINK, html)  # noqa: PT009
+        assert self.MANAGE_TAGS_LINK in html
 
     def test_manage_tags_visible_when_flag_on_and_user_allowed(self):
         """
@@ -784,7 +784,7 @@ class TestXBlockViewHandlerManageTagsAuthz(ItemTest):
                 ):
             html = self._get_container_preview_html()
 
-        self.assertIn(self.MANAGE_TAGS_LINK, html)  # noqa: PT009
+        assert self.MANAGE_TAGS_LINK in html
 
     def test_manage_tags_hidden_when_flag_on_and_user_denied(self):
         """
@@ -803,7 +803,7 @@ class TestXBlockViewHandlerManageTagsAuthz(ItemTest):
                 ):
             html = self._get_container_preview_html()
 
-        self.assertNotIn(self.MANAGE_TAGS_LINK, html)  # noqa: PT009
+        assert self.MANAGE_TAGS_LINK not in html
 
 
 @ddt.ddt
